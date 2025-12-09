@@ -1,5 +1,4 @@
 import * as fs from "fs";
-import * as pdfParse from "pdf-parse";
 import { storage } from "./storage";
 import type { CnrOrder } from "@shared/schema";
 
@@ -32,6 +31,7 @@ export async function extractTextFromPdf(pdfPath: string): Promise<ExtractionRes
       };
     }
 
+    const pdfParse = (await import("pdf-parse")).default;
     const dataBuffer = fs.readFileSync(pdfPath);
     const data = await pdfParse(dataBuffer);
 
@@ -92,7 +92,6 @@ export async function extractTextsForJob(jobId: number, orders: CnrOrder[]): Pro
 
       await storage.updateProcessingJobProgress(jobId, processed, successful, failed);
     } catch (error) {
-      processed++;
       failed++;
       console.error(`Error processing order ${order.id}:`, error);
       await storage.updateProcessingJobProgress(jobId, processed, successful, failed);

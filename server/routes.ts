@@ -2,7 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { cnrGenerationRequestSchema } from "@shared/schema";
-import { fetchPdfsForJob } from "./pdf-fetcher";
+import { fetchPdfsForJob } from "./pdf-fetcher.js";
+import { extractTextsForJob } from "./text-extractor.js";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -315,6 +316,52 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error starting PDF download job:", error);
       res.status(500).json({ error: "Failed to start PDF download job" });
+    }
+  });
+
+  app.post("/api/jobs/extract-texts", async (req, res) => {
+    try {
+      const { limit = 100 } = req.body;
+      
+      const existingJobs = await storage.getProcessingJobs();
+      const runningJob = existingJobs.find(j => 
+        j.jobType === "text_extraction" && (j.status === "processing" || j.status === "pending")
+      );
+      if (runningJob) {
+        return res.json({ 
+          message: "A text extraction job is already running",
+          jobId: runningJob.id,
+          totalOrders: runningJob.totalItems,
+          alreadyRunning: true
+        });
+      }
+      
+      const ordersNeedingText = await storage.getOrdersWithPdfNoText(limit);
+      
+      if (ordersNeedingText.length === 0) {
+        return res.json({ message: "No orders need text extraction", jobId: null });
+      }
+
+      const job = await storage.createProcessingJob({
+        jobType: "text_extraction",
+        status: "pending",
+        totalItems: ordersNeedingText.length,
+        processedItems: 0,
+        successfulItems: 0,
+        failedItems: 0,
+        parameters: JSON.stringify({ limit, orderIds: ordersNeedingText.map(o => o.id) }),
+      });
+
+      extractTextsForJob(job.id, ordersNeedingText);
+
+      res.json({
+        jobId: job.id,
+        totalOrders: ordersNeedingText.length,
+        message: `Started text extraction job for ${ordersNeedingText.length} orders`,
+      });
+    } catch (error) {
+      console.error("Error starting text extraction job:", error);
+      res.status(500).json({ error: "Failed to start text extraction job" });
     }
   });
 
