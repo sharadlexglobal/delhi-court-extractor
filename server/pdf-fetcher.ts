@@ -2,12 +2,28 @@ import { storage } from "./storage";
 import type { CnrOrder, Cnr } from "@shared/schema";
 import { ObjectStorageService } from "./objectStorage";
 
+const SCRAPER_API_KEY = process.env.SCRAPER_API_KEY;
+
+function buildScraperApiUrl(targetUrl: string): string {
+  if (!SCRAPER_API_KEY) {
+    return targetUrl;
+  }
+  const params = new URLSearchParams({
+    api_key: SCRAPER_API_KEY,
+    url: targetUrl,
+    country_code: 'in',
+  });
+  return `http://api.scraperapi.com?${params.toString()}`;
+}
+
 async function fetchSinglePdf(order: CnrOrder & { cnr?: Cnr }): Promise<{ success: boolean; pdfPath?: string; pdfSize?: number; error?: string; httpStatus?: number }> {
   try {
-    const response = await fetch(order.url, {
+    const fetchUrl = buildScraperApiUrl(order.url);
+    console.log(`Fetching PDF via ${SCRAPER_API_KEY ? 'ScraperAPI (Indian IP)' : 'direct'}: ${order.url}`);
+    
+    const response = await fetch(fetchUrl, {
       method: "GET",
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept": "application/pdf,*/*",
       },
     });
