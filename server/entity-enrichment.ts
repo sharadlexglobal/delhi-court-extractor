@@ -23,11 +23,11 @@ interface EnrichmentResult {
 }
 
 function extractCompanyIdentifiers(name: string): { possibleCIN: string | null; possibleLLPIN: string | null } {
-  const cinPattern = /[UL]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6}/;
-  const llpinPattern = /AAA-\d{4}/;
+  const cinPattern = /[UL]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6}/i;
+  const llpinPattern = /AAA-\d{4}/i;
   
-  const cinMatch = name.match(cinPattern);
-  const llpinMatch = name.match(llpinPattern);
+  const cinMatch = name.toUpperCase().match(cinPattern);
+  const llpinMatch = name.toUpperCase().match(llpinPattern);
   
   return {
     possibleCIN: cinMatch ? cinMatch[0] : null,

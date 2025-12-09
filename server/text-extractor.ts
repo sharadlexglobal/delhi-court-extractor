@@ -31,7 +31,8 @@ export async function extractTextFromPdf(pdfPath: string): Promise<ExtractionRes
       };
     }
 
-    const pdfParse = (await import("pdf-parse")).default;
+    const pdfParseModule = await import("pdf-parse") as unknown as { default?: (buffer: Buffer) => Promise<{ text: string; numpages: number }> } | ((buffer: Buffer) => Promise<{ text: string; numpages: number }>);
+    const pdfParse = typeof pdfParseModule === "function" ? pdfParseModule : (pdfParseModule as { default: (buffer: Buffer) => Promise<{ text: string; numpages: number }> }).default;
     const dataBuffer = fs.readFileSync(pdfPath);
     const data = await pdfParse(dataBuffer);
 

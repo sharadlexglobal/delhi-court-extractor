@@ -82,6 +82,15 @@ export interface IStorage {
     ordersCount: number;
     leadsCount: number;
   }[]>;
+  getAnalyticsTrends(days: number): Promise<{
+    date: string;
+    pdfs: number;
+    leads: number;
+  }[]>;
+  getOrderTypeDistribution(): Promise<{
+    orderType: string;
+    count: number;
+  }[]>;
   
   getOrdersWithPdfNoText(limit?: number): Promise<CnrOrder[]>;
   getOrdersWithTextNoMetadata(limit?: number): Promise<CnrOrder[]>;
@@ -376,6 +385,7 @@ export class DatabaseStorage implements IStorage {
     const results = await db
       .select({
         districtName: districts.name,
+        districtId: districts.id,
         cnrsCount: sql<number>`COUNT(DISTINCT ${cnrs.id})`,
         ordersCount: sql<number>`COUNT(DISTINCT ${cnrOrders.id})`,
       })
@@ -385,11 +395,24 @@ export class DatabaseStorage implements IStorage {
       .groupBy(districts.id)
       .orderBy(districts.name);
 
+    const leadsCountResults = await db
+      .select({
+        districtId: cnrs.districtId,
+        leadsCount: sql<number>`COUNT(DISTINCT ${businessEntities.id})`,
+      })
+      .from(businessEntities)
+      .innerJoin(caseEntityLinks, eq(businessEntities.id, caseEntityLinks.entityId))
+      .innerJoin(cnrOrders, eq(caseEntityLinks.cnrOrderId, cnrOrders.id))
+      .innerJoin(cnrs, eq(cnrOrders.cnrId, cnrs.id))
+      .groupBy(cnrs.districtId);
+
+    const leadsMap = new Map(leadsCountResults.map((l) => [l.districtId, Number(l.leadsCount) || 0]));
+
     return results.map((r) => ({
       districtName: r.districtName,
       cnrsCount: Number(r.cnrsCount) || 0,
       ordersCount: Number(r.ordersCount) || 0,
-      leadsCount: 0,
+      leadsCount: leadsMap.get(r.districtId) || 0,
     }));
   }
 
@@ -452,6 +475,76 @@ export class DatabaseStorage implements IStorage {
       .update(businessEntities)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(businessEntities.id, id));
+  }
+
+  async getAnalyticsTrends(days: number): Promise<{
+    date: string;
+    pdfs: number;
+    leads: number;
+  }[]> {
+    const today = new Date();
+    const startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - days + 1);
+    const startDateStr = startDate.toISOString().split("T")[0];
+
+    const pdfResults = await db
+      .select({
+        date: sql<string>`DATE(${cnrOrders.lastCheckedAt})`,
+        count: count(),
+      })
+      .from(cnrOrders)
+      .where(
+        and(
+          eq(cnrOrders.pdfExists, true),
+          sql`${cnrOrders.lastCheckedAt} >= ${startDateStr}::date`
+        )
+      )
+      .groupBy(sql`DATE(${cnrOrders.lastCheckedAt})`);
+
+    const leadsResults = await db
+      .select({
+        date: sql<string>`DATE(${businessEntities.createdAt})`,
+        count: count(),
+      })
+      .from(businessEntities)
+      .where(sql`${businessEntities.createdAt} >= ${startDateStr}::date`)
+      .groupBy(sql`DATE(${businessEntities.createdAt})`);
+
+    const pdfMap = new Map(pdfResults.map((r) => [r.date, Number(r.count) || 0]));
+    const leadsMap = new Map(leadsResults.map((r) => [r.date, Number(r.count) || 0]));
+
+    const trends: Array<{ date: string; pdfs: number; leads: number }> = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split("T")[0];
+      trends.push({
+        date: dateStr,
+        pdfs: pdfMap.get(dateStr) || 0,
+        leads: leadsMap.get(dateStr) || 0,
+      });
+    }
+    return trends;
+  }
+
+  async getOrderTypeDistribution(): Promise<{
+    orderType: string;
+    count: number;
+  }[]> {
+    const results = await db
+      .select({
+        orderType: orderMetadata.orderType,
+        count: count(),
+      })
+      .from(orderMetadata)
+      .where(sql`${orderMetadata.orderType} IS NOT NULL`)
+      .groupBy(orderMetadata.orderType)
+      .orderBy(desc(count()));
+
+    return results.map((r) => ({
+      orderType: r.orderType || "Unknown",
+      count: Number(r.count) || 0,
+    }));
   }
 }
 

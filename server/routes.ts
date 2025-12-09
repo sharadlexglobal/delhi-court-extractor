@@ -254,6 +254,11 @@ export async function registerRoutes(
 
       await storage.updateBusinessEntityEnrichmentStatus(id, "enriching");
       
+      const { enrichEntity } = await import("./entity-enrichment.js");
+      enrichEntity(entity).catch((error) => {
+        console.error(`Background enrichment failed for entity ${id}:`, error);
+      });
+      
       res.json({ message: "Enrichment started", entityId: id });
     } catch (error) {
       console.error("Error enriching lead:", error);
@@ -284,19 +289,7 @@ export async function registerRoutes(
   app.get("/api/analytics/trends", async (req, res) => {
     try {
       const days = parseInt(req.query.days as string) || 30;
-      const trends: Array<{ date: string; pdfs: number; leads: number }> = [];
-      const today = new Date();
-      
-      for (let i = days - 1; i >= 0; i--) {
-        const date = new Date(today);
-        date.setDate(date.getDate() - i);
-        trends.push({
-          date: date.toISOString().split("T")[0],
-          pdfs: 0,
-          leads: 0,
-        });
-      }
-      
+      const trends = await storage.getAnalyticsTrends(days);
       res.json(trends);
     } catch (error) {
       console.error("Error fetching trends:", error);
@@ -306,7 +299,8 @@ export async function registerRoutes(
 
   app.get("/api/analytics/order-types", async (_req, res) => {
     try {
-      res.json([]);
+      const orderTypes = await storage.getOrderTypeDistribution();
+      res.json(orderTypes);
     } catch (error) {
       console.error("Error fetching order types:", error);
       res.status(500).json({ error: "Failed to fetch order types" });

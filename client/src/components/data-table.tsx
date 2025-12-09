@@ -24,7 +24,7 @@ interface DataTableProps<T> {
   testIdPrefix?: string;
 }
 
-export function DataTable<T extends Record<string, unknown>>({
+export function DataTable<T>({
   columns,
   data,
   isLoading,
