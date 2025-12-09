@@ -5,6 +5,7 @@ import { cnrGenerationRequestSchema } from "@shared/schema";
 import { fetchPdfsForJob } from "./pdf-fetcher.js";
 import { extractTextsForJob } from "./text-extractor.js";
 import { classifyOrdersForJob } from "./classifier.js";
+import { enrichEntitiesForJob } from "./entity-enrichment.js";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -166,6 +167,66 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching leads:", error);
       res.status(500).json({ error: "Failed to fetch leads" });
+    }
+  });
+
+  app.get("/api/leads/export", async (_req, res) => {
+    try {
+      const entities = await storage.getBusinessEntities(10000);
+      
+      const csvHeaders = [
+        "ID",
+        "Name",
+        "Type",
+        "CIN",
+        "GSTIN",
+        "City",
+        "State",
+        "Pincode",
+        "Email",
+        "Phone",
+        "Website",
+        "Company Status",
+        "Enrichment Status",
+        "Created At"
+      ].join(",");
+      
+      const csvRows = entities.map(entity => {
+        const escapeCsv = (val: string | null | undefined) => {
+          if (val === null || val === undefined) return "";
+          const str = String(val);
+          if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+            return `"${str.replace(/"/g, '""')}"`;
+          }
+          return str;
+        };
+        
+        return [
+          entity.id,
+          escapeCsv(entity.name),
+          escapeCsv(entity.entityType),
+          escapeCsv(entity.cin),
+          escapeCsv(entity.gstin),
+          escapeCsv(entity.city),
+          escapeCsv(entity.state),
+          escapeCsv(entity.pincode),
+          escapeCsv(entity.email),
+          escapeCsv(entity.phone),
+          escapeCsv(entity.website),
+          escapeCsv(entity.companyStatus),
+          escapeCsv(entity.enrichmentStatus),
+          entity.createdAt ? new Date(entity.createdAt).toISOString() : ""
+        ].join(",");
+      });
+      
+      const csv = [csvHeaders, ...csvRows].join("\n");
+      
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", "attachment; filename=leads-export.csv");
+      res.send(csv);
+    } catch (error) {
+      console.error("Error exporting leads:", error);
+      res.status(500).json({ error: "Failed to export leads" });
     }
   });
 
@@ -413,6 +474,52 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error starting classification job:", error);
       res.status(500).json({ error: "Failed to start classification job" });
+    }
+  });
+
+  app.post("/api/jobs/enrich-entities", async (req, res) => {
+    try {
+      const { limit = 100 } = req.body;
+      
+      const existingJobs = await storage.getProcessingJobs();
+      const runningJob = existingJobs.find(j => 
+        j.jobType === "enrichment" && (j.status === "processing" || j.status === "pending")
+      );
+      if (runningJob) {
+        return res.json({ 
+          message: "An enrichment job is already running",
+          jobId: runningJob.id,
+          totalEntities: runningJob.totalItems,
+          alreadyRunning: true
+        });
+      }
+      
+      const entitiesPendingEnrichment = await storage.getEntitiesPendingEnrichment(limit);
+      
+      if (entitiesPendingEnrichment.length === 0) {
+        return res.json({ message: "No entities need enrichment", jobId: null });
+      }
+
+      const job = await storage.createProcessingJob({
+        jobType: "enrichment",
+        status: "pending",
+        totalItems: entitiesPendingEnrichment.length,
+        processedItems: 0,
+        successfulItems: 0,
+        failedItems: 0,
+        parameters: JSON.stringify({ limit, entityIds: entitiesPendingEnrichment.map(e => e.id) }),
+      });
+
+      enrichEntitiesForJob(job.id, entitiesPendingEnrichment);
+
+      res.json({
+        jobId: job.id,
+        totalEntities: entitiesPendingEnrichment.length,
+        message: `Started enrichment job for ${entitiesPendingEnrichment.length} entities`,
+      });
+    } catch (error) {
+      console.error("Error starting enrichment job:", error);
+      res.status(500).json({ error: "Failed to start enrichment job" });
     }
   });
 

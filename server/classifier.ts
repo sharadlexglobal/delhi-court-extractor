@@ -115,11 +115,23 @@ export async function classifyOrderText(orderId: number, text: string): Promise<
       return null;
     }
 
-    const result = JSON.parse(content) as ClassificationResult;
+    let result: ClassificationResult;
+    try {
+      result = JSON.parse(content) as ClassificationResult;
+    } catch (parseError) {
+      console.error(`JSON parse error for order ${orderId}:`, parseError);
+      return null;
+    }
+    
+    if (!result || typeof result !== "object") {
+      console.error(`Invalid classification result for order ${orderId}`);
+      return null;
+    }
+    
     return result;
   } catch (error) {
     console.error(`Error classifying order ${orderId}:`, error);
-    throw error;
+    return null;
   }
 }
 
@@ -193,8 +205,12 @@ export async function classifyOrdersForJob(
 
       await storage.createOrderMetadata(metadataInsert);
 
-      if (classification.businessEntities && classification.businessEntities.length > 0) {
+      if (classification.businessEntities && Array.isArray(classification.businessEntities) && classification.businessEntities.length > 0) {
         for (const entity of classification.businessEntities) {
+          if (!entity || typeof entity !== "object" || !entity.name || !entity.entityType) {
+            console.warn(`Skipping invalid entity in order ${order.id}`);
+            continue;
+          }
           const normalizedName = normalizeEntityName(entity.name);
           
           const existingEntity = await storage.getBusinessEntityByNormalizedName(normalizedName);

@@ -32,7 +32,7 @@ import {
 import { DataTable } from "@/components/data-table";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Hash, ChevronDown, Loader2, CheckCircle2, XCircle, Download, Play } from "lucide-react";
+import { Hash, ChevronDown, Loader2, CheckCircle2, XCircle, Download, Play, FileText, Brain, Sparkles } from "lucide-react";
 import type { District, Cnr, ProcessingJob } from "@shared/schema";
 
 const generateFormSchema = z.object({
@@ -166,6 +166,125 @@ export default function CnrGenerator() {
     },
   });
 
+  const extractTextsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/jobs/extract-texts", {
+        limit: 100,
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.jobId) {
+        lastCompletedJobIdRef.current = null;
+        setActiveJobId(data.jobId);
+        if (data.alreadyRunning) {
+          toast({
+            title: "Job Already Running",
+            description: `Tracking existing text extraction job`,
+          });
+        } else {
+          toast({
+            title: "Text Extraction Started",
+            description: `Processing ${data.totalOrders} orders`,
+          });
+        }
+      } else {
+        toast({
+          title: "No Orders to Process",
+          description: "All PDFs have been extracted",
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Text Extraction Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const classifyMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/jobs/classify", {
+        limit: 100,
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.jobId) {
+        lastCompletedJobIdRef.current = null;
+        setActiveJobId(data.jobId);
+        if (data.alreadyRunning) {
+          toast({
+            title: "Job Already Running",
+            description: `Tracking existing classification job`,
+          });
+        } else {
+          toast({
+            title: "Classification Started",
+            description: `Analyzing ${data.totalOrders} orders`,
+          });
+        }
+      } else {
+        toast({
+          title: "No Orders to Classify",
+          description: "All orders have been classified",
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Classification Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const enrichEntitiesMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/jobs/enrich-entities", {
+        limit: 100,
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.jobId) {
+        lastCompletedJobIdRef.current = null;
+        setActiveJobId(data.jobId);
+        if (data.alreadyRunning) {
+          toast({
+            title: "Job Already Running",
+            description: `Tracking existing enrichment job`,
+          });
+        } else {
+          toast({
+            title: "Enrichment Started",
+            description: `Enriching ${data.totalEntities} entities`,
+          });
+        }
+      } else {
+        toast({
+          title: "No Entities to Enrich",
+          description: "All entities have been enriched",
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Enrichment Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   useEffect(() => {
     if (activeJobId === null) return;
     if (!activeJob) return;
@@ -188,6 +307,18 @@ export default function CnrGenerator() {
 
   const handleStartDownload = () => {
     startDownloadMutation.mutate();
+  };
+
+  const handleExtractTexts = () => {
+    extractTextsMutation.mutate();
+  };
+
+  const handleClassify = () => {
+    classifyMutation.mutate();
+  };
+
+  const handleEnrichEntities = () => {
+    enrichEntitiesMutation.mutate();
   };
 
   const cnrColumns = [
@@ -514,6 +645,90 @@ export default function CnrGenerator() {
                   </div>
                 </div>
               )}
+            </div>
+
+            <div className="mt-6 border-t pt-6">
+              <h3 className="mb-3 text-sm font-medium text-muted-foreground">
+                Step 3: Extract Text
+              </h3>
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={handleExtractTexts}
+                disabled={extractTextsMutation.isPending || !!activeJobId}
+                data-testid="button-extract-texts"
+              >
+                {extractTextsMutation.isPending || (activeJobId && activeJob?.jobType === "text_extraction") ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Extracting Text...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="mr-2 h-4 w-4" />
+                    Extract Text from PDFs
+                  </>
+                )}
+              </Button>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Extract text content from downloaded PDF orders
+              </p>
+            </div>
+
+            <div className="mt-6 border-t pt-6">
+              <h3 className="mb-3 text-sm font-medium text-muted-foreground">
+                Step 4: Classify Orders
+              </h3>
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={handleClassify}
+                disabled={classifyMutation.isPending || !!activeJobId}
+                data-testid="button-classify"
+              >
+                {classifyMutation.isPending || (activeJobId && activeJob?.jobType === "classification") ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Classifying...
+                  </>
+                ) : (
+                  <>
+                    <Brain className="mr-2 h-4 w-4" />
+                    Classify with AI
+                  </>
+                )}
+              </Button>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Use AI to analyze orders and extract business leads
+              </p>
+            </div>
+
+            <div className="mt-6 border-t pt-6">
+              <h3 className="mb-3 text-sm font-medium text-muted-foreground">
+                Step 5: Enrich Leads
+              </h3>
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={handleEnrichEntities}
+                disabled={enrichEntitiesMutation.isPending || !!activeJobId}
+                data-testid="button-enrich"
+              >
+                {enrichEntitiesMutation.isPending || (activeJobId && activeJob?.jobType === "enrichment") ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Enriching...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Enrich Business Leads
+                  </>
+                )}
+              </Button>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Add location and contact details to extracted leads
+              </p>
             </div>
           </CardContent>
         </Card>

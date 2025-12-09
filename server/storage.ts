@@ -88,6 +88,22 @@ export interface IStorage {
   getPdfTextByOrderId(orderId: number): Promise<PdfText | undefined>;
   getEntitiesPendingEnrichment(limit?: number): Promise<BusinessEntity[]>;
   getBusinessEntityByNormalizedName(nameNormalized: string): Promise<BusinessEntity | undefined>;
+  updateBusinessEntityWithEnrichment(id: number, data: Partial<{
+    cin: string;
+    llpin: string;
+    gstin: string;
+    pan: string;
+    registeredAddress: string;
+    city: string;
+    state: string;
+    pincode: string;
+    email: string;
+    phone: string;
+    website: string;
+    companyStatus: string;
+    dataSource: string;
+    enrichmentStatus: string;
+  }>): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -414,6 +430,28 @@ export class DatabaseStorage implements IStorage {
   async getBusinessEntityByNormalizedName(nameNormalized: string): Promise<BusinessEntity | undefined> {
     const [entity] = await db.select().from(businessEntities).where(eq(businessEntities.nameNormalized, nameNormalized));
     return entity;
+  }
+
+  async updateBusinessEntityWithEnrichment(id: number, data: Partial<{
+    cin: string;
+    llpin: string;
+    gstin: string;
+    pan: string;
+    registeredAddress: string;
+    city: string;
+    state: string;
+    pincode: string;
+    email: string;
+    phone: string;
+    website: string;
+    companyStatus: string;
+    dataSource: string;
+    enrichmentStatus: string;
+  }>): Promise<void> {
+    await db
+      .update(businessEntities)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(businessEntities.id, id));
   }
 }
 
