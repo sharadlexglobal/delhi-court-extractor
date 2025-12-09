@@ -1,7 +1,9 @@
 import { storage } from "./storage";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import type { CnrOrder } from "@shared/schema";
+import { createRequire } from "module";
 
+const require = createRequire(import.meta.url);
 const objectStorage = new ObjectStorageService();
 
 export interface ExtractionResult {
@@ -24,18 +26,22 @@ export async function extractTextFromPdf(pdfPath: string): Promise<ExtractionRes
   try {
     const pdfBuffer = await objectStorage.getPdfBuffer(pdfPath);
 
-    const pdfParseModule = await import("pdf-parse") as unknown as { default?: (buffer: Buffer) => Promise<{ text: string; numpages: number }> } | ((buffer: Buffer) => Promise<{ text: string; numpages: number }>);
-    const pdfParse = typeof pdfParseModule === "function" ? pdfParseModule : (pdfParseModule as { default: (buffer: Buffer) => Promise<{ text: string; numpages: number }> }).default;
-    const data = await pdfParse(pdfBuffer);
-
-    const rawText = data.text;
+    const { PDFParse } = require("pdf-parse");
+    const parser = new PDFParse({ data: pdfBuffer });
+    await parser.load();
+    
+    const textResult = await parser.getText();
+    const rawText = textResult.text || "";
+    const info = await parser.getInfo();
     const cleanedText = cleanText(rawText);
+
+    await parser.destroy();
 
     return {
       success: true,
       rawText,
       cleanedText,
-      pageCount: data.numpages,
+      pageCount: info?.numPages || 0,
       wordCount: cleanedText.split(/\s+/).filter(Boolean).length,
     };
   } catch (error) {
