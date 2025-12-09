@@ -58,6 +58,7 @@ interface GeneratedCnr extends Cnr {
 export default function CnrGenerator() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [activeJobId, setActiveJobId] = useState<number | null>(null);
+  const [generatedOrderIds, setGeneratedOrderIds] = useState<number[]>([]);
   const lastCompletedJobIdRef = useRef<number | null>(null);
   const { toast } = useToast();
 
@@ -116,6 +117,7 @@ export default function CnrGenerator() {
       return response.json();
     },
     onSuccess: (data) => {
+      setGeneratedOrderIds(data.orderIds || []);
       toast({
         title: "CNRs Generated",
         description: `Created ${data.cnrsCreated} CNRs with ${data.ordersCreated} order combinations`,
@@ -136,7 +138,7 @@ export default function CnrGenerator() {
   const startDownloadMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("POST", "/api/jobs/start-pdf-download-zenrows", {
-        limit: 10000,
+        orderIds: generatedOrderIds,
       });
       return response.json();
     },
@@ -619,7 +621,7 @@ export default function CnrGenerator() {
                 variant="secondary"
                 className="w-full"
                 onClick={handleStartDownload}
-                disabled={startDownloadMutation.isPending || !!activeJobId}
+                disabled={startDownloadMutation.isPending || !!activeJobId || generatedOrderIds.length === 0}
                 data-testid="button-start-download"
               >
                 {startDownloadMutation.isPending || activeJobId ? (
@@ -630,7 +632,9 @@ export default function CnrGenerator() {
                 ) : (
                   <>
                     <Download className="mr-2 h-4 w-4" />
-                    Start PDF Download
+                    {generatedOrderIds.length > 0 
+                      ? `Download PDFs (${generatedOrderIds.length} orders)` 
+                      : "Generate CNRs First"}
                   </>
                 )}
               </Button>

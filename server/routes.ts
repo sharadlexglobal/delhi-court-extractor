@@ -144,6 +144,7 @@ export async function registerRoutes(
       res.json({
         cnrsCreated: createdCnrs.length,
         ordersCreated: createdOrders.length,
+        orderIds: createdOrders.map(o => o.id),
         message: `Generated ${createdCnrs.length} CNRs with ${createdOrders.length} order combinations`,
       });
     } catch (error) {
@@ -739,7 +740,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "ZENROWS_API_KEY is not configured" });
       }
 
-      const { limit = 100 } = req.body;
+      const { limit = 100, orderIds } = req.body;
       
       const existingJobs = await storage.getProcessingJobs();
       const runningJob = existingJobs.find(j => j.status === "processing" || j.status === "pending");
@@ -752,7 +753,13 @@ export async function registerRoutes(
         });
       }
       
-      const pendingOrders = await storage.getPendingOrders(limit);
+      let pendingOrders;
+      if (orderIds && Array.isArray(orderIds) && orderIds.length > 0) {
+        pendingOrders = await storage.getOrdersByIds(orderIds);
+        pendingOrders = pendingOrders.filter(o => o.downloadStatus === 'pending');
+      } else {
+        pendingOrders = await storage.getPendingOrders(limit);
+      }
       
       if (pendingOrders.length === 0) {
         return res.json({ message: "No pending orders to process", jobId: null });

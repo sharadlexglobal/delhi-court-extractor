@@ -71,6 +71,7 @@ export interface IStorage {
   updateProcessingJobStarted(id: number): Promise<void>;
   
   getPendingOrders(limit?: number): Promise<CnrOrder[]>;
+  getOrdersByIds(ids: number[]): Promise<CnrOrder[]>;
   updateOrderPdfPath(id: number, pdfPath: string, pdfSizeBytes: number): Promise<void>;
   
   getAnalyticsOverview(): Promise<{
@@ -380,6 +381,14 @@ export class DatabaseStorage implements IStorage {
       )
       .orderBy(sql`${cnrOrders.retryCount} ASC, ${cnrOrders.lastCheckedAt} NULLS FIRST`)
       .limit(limit);
+  }
+
+  async getOrdersByIds(ids: number[]): Promise<CnrOrder[]> {
+    if (ids.length === 0) return [];
+    return db
+      .select()
+      .from(cnrOrders)
+      .where(sql`${cnrOrders.id} = ANY(ARRAY[${sql.raw(ids.join(','))}]::int[])`);
   }
 
   async updateOrderPdfPath(id: number, pdfPath: string, pdfSizeBytes: number): Promise<void> {
