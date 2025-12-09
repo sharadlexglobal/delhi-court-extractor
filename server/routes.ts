@@ -697,5 +697,104 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/test-complete-workflow", async (req, res) => {
+    try {
+      const { orderId } = req.body;
+      
+      if (!orderId) {
+        return res.status(400).json({ error: "orderId is required" });
+      }
+      
+      if (!process.env.ZENROWS_API_KEY) {
+        return res.status(400).json({ error: "ZENROWS_API_KEY is not configured" });
+      }
+      
+      const order = await storage.getOrderById(orderId);
+      if (!order) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+      
+      if (!order.url) {
+        return res.status(400).json({ error: "Order has no URL" });
+      }
+      
+      const cnr = await storage.getCnrById(order.cnrId);
+      const orderWithCnr = { ...order, cnr };
+      
+      console.log(`[Workflow Test] Step 1: Downloading PDF for order ${orderId}...`);
+      
+      const { fetchPdfsWithZenRows } = await import("./zenrows-pdf-fetcher");
+      const { ObjectStorageService } = await import("./objectStorage");
+      const { extractTextFromPdf } = await import("./text-extractor");
+      const axios = (await import("axios")).default;
+      
+      const apiKey = process.env.ZENROWS_API_KEY;
+      const response = await axios.get('https://api.zenrows.com/v1/', {
+        params: {
+          url: order.url,
+          apikey: apiKey,
+          premium_proxy: 'true',
+          js_render: 'true',
+        },
+        responseType: 'arraybuffer',
+        timeout: 120000,
+      });
+      
+      const buffer = Buffer.from(response.data);
+      const pdfHeader = buffer.slice(0, 8).toString('ascii');
+      
+      if (!pdfHeader.startsWith('%PDF-')) {
+        return res.json({
+          step1_download: "failed",
+          error: "Downloaded content is not a valid PDF",
+          preview: buffer.slice(0, 100).toString('utf8'),
+        });
+      }
+      
+      console.log(`[Workflow Test] Step 2: Saving PDF to Object Storage (${buffer.length} bytes)...`);
+      
+      const objectStorage = new ObjectStorageService();
+      const cnrString = cnr?.cnr || `unknown_${order.cnrId}`;
+      const pdfPath = await objectStorage.storePdf(buffer, cnrString, order.orderNo);
+      
+      await storage.updateOrderPdfPath(order.id, pdfPath, buffer.length);
+      
+      console.log(`[Workflow Test] Step 3: Extracting text from PDF...`);
+      
+      const extractionResult = await extractTextFromPdf(pdfPath);
+      
+      if (extractionResult.success && extractionResult.rawText.length > 0) {
+        await storage.createPdfText({
+          cnrOrderId: order.id,
+          rawText: extractionResult.rawText,
+          cleanedText: extractionResult.cleanedText,
+          pageCount: extractionResult.pageCount,
+          wordCount: extractionResult.wordCount,
+        });
+      }
+      
+      res.json({
+        step1_download: "success",
+        pdfSize: buffer.length,
+        step2_storage: "success",
+        pdfPath: pdfPath,
+        step3_extraction: extractionResult.success ? "success" : "failed",
+        extractedText: {
+          pageCount: extractionResult.pageCount,
+          wordCount: extractionResult.wordCount,
+          preview: extractionResult.cleanedText.slice(0, 500),
+          errorMessage: extractionResult.errorMessage,
+        },
+      });
+      
+    } catch (error) {
+      console.error("[Workflow Test] Error:", error);
+      res.status(500).json({ 
+        error: "Workflow test failed", 
+        message: error instanceof Error ? error.message : "Unknown error" 
+      });
+    }
+  });
+
   return httpServer;
 }
