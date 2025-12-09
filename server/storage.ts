@@ -166,7 +166,14 @@ export class DatabaseStorage implements IStorage {
 
   async createCnrsBatch(data: InsertCnr[]): Promise<Cnr[]> {
     if (data.length === 0) return [];
-    return db.insert(cnrs).values(data).returning();
+    const CHUNK_SIZE = 100;
+    const results: Cnr[] = [];
+    for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+      const chunk = data.slice(i, i + CHUNK_SIZE);
+      const inserted = await db.insert(cnrs).values(chunk).returning();
+      results.push(...inserted);
+    }
+    return results;
   }
 
   async getOrders(limit = 100): Promise<(CnrOrder & { cnr?: Cnr & { district?: District }; metadata?: OrderMetadata | null })[]> {
@@ -203,7 +210,14 @@ export class DatabaseStorage implements IStorage {
 
   async createOrdersBatch(data: InsertCnrOrder[]): Promise<CnrOrder[]> {
     if (data.length === 0) return [];
-    return db.insert(cnrOrders).values(data).returning();
+    const CHUNK_SIZE = 100;
+    const results: CnrOrder[] = [];
+    for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+      const chunk = data.slice(i, i + CHUNK_SIZE);
+      const inserted = await db.insert(cnrOrders).values(chunk).returning();
+      results.push(...inserted);
+    }
+    return results;
   }
 
   async updateOrderPdfStatus(id: number, pdfExists: boolean, httpStatusCode?: number): Promise<void> {
