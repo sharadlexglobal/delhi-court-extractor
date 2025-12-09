@@ -41,23 +41,14 @@ async function fetchSinglePdfWithZenRows(
   try {
     console.log(`[ZenRows] Fetching PDF: ${order.url}`);
     
-    const parsedUrl = new URL(order.url);
-    const referer = `${parsedUrl.protocol}//${parsedUrl.hostname}/`;
-    
     const response = await axios.get('https://api.zenrows.com/v1/', {
       params: {
         url: order.url,
         apikey: apiKey,
         premium_proxy: 'true',
-        js_render: 'true',
-        wait: '5000',
-        wait_for: '.pdf-content,iframe,object',
-      },
-      headers: {
-        'Referer': referer,
       },
       responseType: 'arraybuffer',
-      timeout: 180000,
+      timeout: 60000,
     });
 
     const httpStatus = response.status;
@@ -191,23 +182,14 @@ export async function testZenRowsPdfFetch(url: string): Promise<{
   try {
     console.log(`[ZenRows Test] Fetching: ${url}`);
     
-    const parsedUrl = new URL(url);
-    const referer = `${parsedUrl.protocol}//${parsedUrl.hostname}/`;
-    
     const response = await axios.get('https://api.zenrows.com/v1/', {
       params: {
         url: url,
         apikey: apiKey,
         premium_proxy: 'true',
-        js_render: 'true',
-        wait: '5000',
-        wait_for: '.pdf-content,iframe,object',
-      },
-      headers: {
-        'Referer': referer,
       },
       responseType: 'arraybuffer',
-      timeout: 180000,
+      timeout: 60000,
     });
 
     const buffer = Buffer.from(response.data);
