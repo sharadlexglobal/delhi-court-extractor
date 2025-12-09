@@ -89,9 +89,13 @@ export default function Orders() {
     {
       key: "orderDate",
       header: "Date",
-      render: (row: OrderWithRelations) => (
-        <span className="font-mono text-sm">{String(row.orderDate)}</span>
-      ),
+      render: (row: OrderWithRelations) => {
+        const date = row.orderDate;
+        const formatted = date 
+          ? (typeof date === 'string' ? date.slice(0, 10) : new Date(date).toISOString().slice(0, 10))
+          : "-";
+        return <span className="font-mono text-sm">{formatted}</span>;
+      },
     },
     {
       key: "caseTitle",
@@ -263,7 +267,13 @@ export default function Orders() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Order Date</p>
-                    <p className="font-mono">{String(selectedOrder.orderDate)}</p>
+                    <p className="font-mono">
+                      {selectedOrder.orderDate 
+                        ? (typeof selectedOrder.orderDate === 'string' 
+                            ? selectedOrder.orderDate.slice(0, 10) 
+                            : new Date(selectedOrder.orderDate).toISOString().slice(0, 10))
+                        : "-"}
+                    </p>
                   </div>
                 </div>
                 {selectedOrder.metadata?.caseTitle && (

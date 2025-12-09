@@ -56,9 +56,13 @@ export default function Dashboard() {
     {
       key: "orderDate",
       header: "Date",
-      render: (row: RecentOrder) => (
-        <span className="font-mono text-sm">{String(row.orderDate)}</span>
-      ),
+      render: (row: RecentOrder) => {
+        const date = row.orderDate;
+        const formatted = date 
+          ? (typeof date === 'string' ? date.slice(0, 10) : new Date(date).toISOString().slice(0, 10))
+          : "-";
+        return <span className="font-mono text-sm">{formatted}</span>;
+      },
     },
     {
       key: "pdfExists",
