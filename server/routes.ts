@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { cnrGenerationRequestSchema } from "@shared/schema";
 import { fetchPdfsForJob } from "./pdf-fetcher.js";
 import { fetchPdfsWithPlaywright, testPlaywrightPdfFetch } from "./playwright-pdf-fetcher.js";
+import { fetchPdfsWithZenRows, testZenRowsPdfFetch } from "./zenrows-pdf-fetcher.js";
 import { extractTextsForJob } from "./text-extractor.js";
 import { classifyOrdersForJob } from "./classifier.js";
 import { enrichEntitiesForJob } from "./entity-enrichment.js";
@@ -629,6 +630,70 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error starting Playwright PDF download job:", error);
       res.status(500).json({ error: "Failed to start Playwright PDF download job" });
+    }
+  });
+
+  app.post("/api/test-zenrows-pdf", async (req, res) => {
+    try {
+      const { url } = req.body;
+      if (!url) {
+        return res.status(400).json({ error: "URL is required" });
+      }
+      
+      console.log(`Testing ZenRows PDF fetch for: ${url}`);
+      const result = await testZenRowsPdfFetch(url);
+      res.json(result);
+    } catch (error) {
+      console.error("Error testing ZenRows PDF:", error);
+      res.status(500).json({ error: "Failed to test PDF fetch" });
+    }
+  });
+
+  app.post("/api/jobs/start-pdf-download-zenrows", async (req, res) => {
+    try {
+      if (!process.env.ZENROWS_API_KEY) {
+        return res.status(400).json({ error: "ZENROWS_API_KEY is not configured" });
+      }
+
+      const { limit = 100 } = req.body;
+      
+      const existingJobs = await storage.getProcessingJobs();
+      const runningJob = existingJobs.find(j => j.status === "processing" || j.status === "pending");
+      if (runningJob) {
+        return res.json({ 
+          message: "A download job is already running",
+          jobId: runningJob.id,
+          totalOrders: runningJob.totalItems,
+          alreadyRunning: true
+        });
+      }
+      
+      const pendingOrders = await storage.getPendingOrders(limit);
+      
+      if (pendingOrders.length === 0) {
+        return res.json({ message: "No pending orders to process", jobId: null });
+      }
+
+      const job = await storage.createProcessingJob({
+        jobType: "pdf_download",
+        status: "pending",
+        totalItems: pendingOrders.length,
+        processedItems: 0,
+        successfulItems: 0,
+        failedItems: 0,
+        parameters: JSON.stringify({ limit, orderIds: pendingOrders.map(o => o.id), method: 'zenrows' }),
+      });
+
+      fetchPdfsWithZenRows(job.id, pendingOrders);
+
+      res.json({
+        jobId: job.id,
+        totalOrders: pendingOrders.length,
+        message: `Started ZenRows PDF download job for ${pendingOrders.length} orders`,
+      });
+    } catch (error) {
+      console.error("Error starting ZenRows PDF download job:", error);
+      res.status(500).json({ error: "Failed to start ZenRows PDF download job" });
     }
   });
 
