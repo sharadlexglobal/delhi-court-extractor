@@ -135,8 +135,8 @@ export default function CnrGenerator() {
 
   const startDownloadMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("POST", "/api/jobs/start-pdf-download", {
-        limit: 50,
+      const response = await apiRequest("POST", "/api/jobs/start-pdf-download-zenrows", {
+        limit: 10000,
       });
       return response.json();
     },
@@ -151,8 +151,8 @@ export default function CnrGenerator() {
           });
         } else {
           toast({
-            title: "PDF Download Started",
-            description: `Processing ${data.totalOrders} orders`,
+            title: "ZenRows PDF Download Started",
+            description: `Processing ${data.totalOrders} orders via ZenRows`,
           });
         }
       } else {
