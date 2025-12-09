@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { StatsCard } from "@/components/stats-card";
 import { DataTable } from "@/components/data-table";
+import { ProcessingPanel } from "@/components/processing-panel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +14,6 @@ import {
   ArrowRight,
   CheckCircle2,
   Clock,
-  AlertCircle,
 } from "lucide-react";
 import type { CnrOrder, OrderMetadata } from "@shared/schema";
 
@@ -209,44 +209,7 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg font-semibold">Processing Status</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="flex items-center gap-3 rounded-md bg-muted/50 p-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-emerald-500/10">
-                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">PDFs Downloaded</p>
-                <p className="text-2xl font-semibold font-mono">
-                  {stats?.pdfsDownloaded ?? 0}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 rounded-md bg-muted/50 p-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-amber-500/10">
-                <Clock className="h-5 w-5 text-amber-500" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">Pending Classification</p>
-                <p className="text-2xl font-semibold font-mono">0</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 rounded-md bg-muted/50 p-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-red-500/10">
-                <AlertCircle className="h-5 w-5 text-red-500" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">Failed Jobs</p>
-                <p className="text-2xl font-semibold font-mono">0</p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <ProcessingPanel />
     </div>
   );
 }

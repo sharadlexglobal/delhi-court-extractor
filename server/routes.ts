@@ -7,6 +7,7 @@ import { extractTextsForJob } from "./text-extractor.js";
 import { classifyOrdersForJob } from "./classifier.js";
 import { enrichEntitiesForJob } from "./entity-enrichment.js";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
+import { seedDistricts } from "./seed";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -529,6 +530,30 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error starting enrichment job:", error);
       res.status(500).json({ error: "Failed to start enrichment job" });
+    }
+  });
+
+  app.post("/api/seed-districts", async (_req, res) => {
+    try {
+      const result = await seedDistricts();
+      res.json({
+        message: "Districts seeded successfully",
+        added: result.added,
+        skipped: result.skipped,
+      });
+    } catch (error) {
+      console.error("Error seeding districts:", error);
+      res.status(500).json({ error: "Failed to seed districts" });
+    }
+  });
+
+  app.get("/api/analytics/processing-stats", async (_req, res) => {
+    try {
+      const stats = await storage.getProcessingStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching processing stats:", error);
+      res.status(500).json({ error: "Failed to fetch processing stats" });
     }
   });
 

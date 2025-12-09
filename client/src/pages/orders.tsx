@@ -148,13 +148,13 @@ export default function Orders() {
           >
             <Eye className="h-4 w-4" />
           </Button>
-          {row.pdfExists && (
+          {row.pdfExists && row.pdfPath && (
             <Button
               variant="ghost"
               size="icon"
               onClick={(e) => {
                 e.stopPropagation();
-                window.open(row.url, "_blank");
+                window.open(row.pdfPath!, "_blank");
               }}
               data-testid={`button-download-${row.id}`}
             >

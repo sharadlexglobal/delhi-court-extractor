@@ -1,6 +1,8 @@
-import * as fs from "fs";
 import { storage } from "./storage";
+import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import type { CnrOrder } from "@shared/schema";
+
+const objectStorage = new ObjectStorageService();
 
 export interface ExtractionResult {
   success: boolean;
@@ -20,21 +22,11 @@ function cleanText(text: string): string {
 
 export async function extractTextFromPdf(pdfPath: string): Promise<ExtractionResult> {
   try {
-    if (!fs.existsSync(pdfPath)) {
-      return {
-        success: false,
-        rawText: "",
-        cleanedText: "",
-        pageCount: 0,
-        wordCount: 0,
-        errorMessage: `File not found: ${pdfPath}`,
-      };
-    }
+    const pdfBuffer = await objectStorage.getPdfBuffer(pdfPath);
 
     const pdfParseModule = await import("pdf-parse") as unknown as { default?: (buffer: Buffer) => Promise<{ text: string; numpages: number }> } | ((buffer: Buffer) => Promise<{ text: string; numpages: number }>);
     const pdfParse = typeof pdfParseModule === "function" ? pdfParseModule : (pdfParseModule as { default: (buffer: Buffer) => Promise<{ text: string; numpages: number }> }).default;
-    const dataBuffer = fs.readFileSync(pdfPath);
-    const data = await pdfParse(dataBuffer);
+    const data = await pdfParse(pdfBuffer);
 
     const rawText = data.text;
     const cleanedText = cleanText(rawText);
@@ -47,6 +39,16 @@ export async function extractTextFromPdf(pdfPath: string): Promise<ExtractionRes
       wordCount: cleanedText.split(/\s+/).filter(Boolean).length,
     };
   } catch (error) {
+    if (error instanceof ObjectNotFoundError) {
+      return {
+        success: false,
+        rawText: "",
+        cleanedText: "",
+        pageCount: 0,
+        wordCount: 0,
+        errorMessage: `PDF not found in Object Storage: ${pdfPath}`,
+      };
+    }
     return {
       success: false,
       rawText: "",

@@ -97,6 +97,13 @@ export interface IStorage {
   getPdfTextByOrderId(orderId: number): Promise<PdfText | undefined>;
   getEntitiesPendingEnrichment(limit?: number): Promise<BusinessEntity[]>;
   getBusinessEntityByNormalizedName(nameNormalized: string): Promise<BusinessEntity | undefined>;
+  getProcessingStats(): Promise<{
+    pendingTextExtraction: number;
+    pendingClassification: number;
+    pendingEnrichment: number;
+    failedJobs: number;
+    runningJobs: number;
+  }>;
   updateBusinessEntityWithEnrichment(id: number, data: Partial<{
     cin: string;
     llpin: string;
@@ -559,6 +566,50 @@ export class DatabaseStorage implements IStorage {
       orderType: r.orderType || "Unknown",
       count: Number(r.count) || 0,
     }));
+  }
+
+  async getProcessingStats(): Promise<{
+    pendingTextExtraction: number;
+    pendingClassification: number;
+    pendingEnrichment: number;
+    failedJobs: number;
+    runningJobs: number;
+  }> {
+    const [pendingTextExtractionResult] = await db
+      .select({ count: count() })
+      .from(cnrOrders)
+      .leftJoin(pdfTexts, eq(cnrOrders.id, pdfTexts.cnrOrderId))
+      .where(and(eq(cnrOrders.pdfExists, true), isNull(pdfTexts.id)));
+    
+    const [pendingClassificationResult] = await db
+      .select({ count: count() })
+      .from(cnrOrders)
+      .innerJoin(pdfTexts, eq(cnrOrders.id, pdfTexts.cnrOrderId))
+      .leftJoin(orderMetadata, eq(cnrOrders.id, orderMetadata.cnrOrderId))
+      .where(isNull(orderMetadata.id));
+    
+    const [pendingEnrichmentResult] = await db
+      .select({ count: count() })
+      .from(businessEntities)
+      .where(eq(businessEntities.enrichmentStatus, "pending"));
+    
+    const [failedJobsResult] = await db
+      .select({ count: count() })
+      .from(processingJobs)
+      .where(eq(processingJobs.status, "failed"));
+    
+    const [runningJobsResult] = await db
+      .select({ count: count() })
+      .from(processingJobs)
+      .where(sql`${processingJobs.status} IN ('pending', 'processing')`);
+
+    return {
+      pendingTextExtraction: Number(pendingTextExtractionResult?.count) || 0,
+      pendingClassification: Number(pendingClassificationResult?.count) || 0,
+      pendingEnrichment: Number(pendingEnrichmentResult?.count) || 0,
+      failedJobs: Number(failedJobsResult?.count) || 0,
+      runningJobs: Number(runningJobsResult?.count) || 0,
+    };
   }
 }
 
