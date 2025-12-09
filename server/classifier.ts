@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { storage } from "./storage";
-import type { CnrOrder, InsertOrderMetadata, InsertBusinessEntity, InsertCaseEntityLink } from "@shared/schema";
+import type { CnrOrder, InsertOrderMetadata, InsertBusinessEntity, InsertCaseEntityLink, InsertPersonLead } from "@shared/schema";
 
 let openaiClient: OpenAI | null = null;
 
@@ -46,6 +46,12 @@ interface ClassificationResult {
     entityType: string;
     partyRole: "petitioner" | "respondent" | "third_party";
   }>;
+  personLeads: Array<{
+    name: string;
+    partyRole: "petitioner" | "respondent" | "third_party";
+    address: string | null;
+  }>;
+  freshCasePhrase: string | null;
 }
 
 const CLASSIFICATION_PROMPT = `You are a legal document analyzer specializing in Indian court orders. Analyze the following court order text and extract structured information.
@@ -82,7 +88,15 @@ Return a JSON object with the following fields:
       "entityType": "Pvt Ltd, LLP, Partnership, Sole Proprietor, Public Ltd, etc.",
       "partyRole": "petitioner, respondent, or third_party"
     }
-  ]
+  ],
+  "personLeads": [
+    {
+      "name": "Full name of individual person (NOT a business entity)",
+      "partyRole": "petitioner, respondent, or third_party",
+      "address": "Address if mentioned in the order, otherwise null"
+    }
+  ],
+  "freshCasePhrase": "Exact phrase if found, like 'fresh case received, it be checked and registered' or similar"
 }
 
 Focus on identifying:
@@ -90,8 +104,10 @@ Focus on identifying:
 2. Summons and notice orders (these indicate active litigation opportunities)
 3. Recovery/money suits (potential for debt collection services)
 4. Fresh case assignments (new business opportunities)
+5. IMPORTANT: Look for phrases like "fresh case received, it be checked and registered" which indicate new case assignments - set isFreshCaseAssignment to true and capture the exact phrase in freshCasePhrase
+6. When isFreshCaseAssignment is true, extract individual PERSON names (NOT businesses) from respondent/defendant parties as personLeads - these are potential leads for legal services
 
-If a field is not found in the text, use null for strings and false for booleans.`;
+If a field is not found in the text, use null for strings, false for booleans, and empty array [] for arrays.`;
 
 export async function classifyOrderText(orderId: number, text: string): Promise<ClassificationResult | null> {
   const openai = getOpenAI();
@@ -234,6 +250,34 @@ export async function classifyOrdersForJob(
             partyRole: entity.partyRole,
             confidence: classification.classificationConfidence,
           });
+        }
+      }
+
+      if (classification.isFreshCaseAssignment && classification.personLeads && Array.isArray(classification.personLeads) && classification.personLeads.length > 0) {
+        for (const person of classification.personLeads) {
+          if (!person || typeof person !== "object" || !person.name) {
+            console.warn(`Skipping invalid person lead in order ${order.id}`);
+            continue;
+          }
+          
+          const personLead: InsertPersonLead = {
+            cnrOrderId: order.id,
+            name: person.name,
+            nameNormalized: normalizeEntityName(person.name),
+            partyRole: person.partyRole || "respondent",
+            caseType: classification.caseType,
+            caseNumber: classification.caseNumber,
+            petitionerName: classification.petitionerNames,
+            isFreshCase: true,
+            freshCasePhrase: classification.freshCasePhrase,
+            address: person.address,
+            nextHearingDate: classification.nextHearingDate,
+            courtName: classification.courtName,
+            judgeName: classification.judgeName,
+            confidence: classification.classificationConfidence,
+          };
+          
+          await storage.createPersonLead(personLead);
         }
       }
 

@@ -276,6 +276,90 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/person-leads", async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const personLeads = await storage.getPersonLeads(limit);
+      res.json(personLeads);
+    } catch (error) {
+      console.error("Error fetching person leads:", error);
+      res.status(500).json({ error: "Failed to fetch person leads" });
+    }
+  });
+
+  app.get("/api/person-leads/export", async (_req, res) => {
+    try {
+      const personLeads = await storage.getPersonLeads(10000);
+      
+      const csvHeaders = [
+        "ID",
+        "Name",
+        "Party Role",
+        "Case Type",
+        "Case Number",
+        "Petitioner",
+        "Is Fresh Case",
+        "Fresh Case Phrase",
+        "Address",
+        "Phone",
+        "Next Hearing Date",
+        "Court Name",
+        "Judge Name",
+        "Confidence",
+        "Created At"
+      ].join(",");
+      
+      const csvRows = personLeads.map(lead => {
+        const escapeCsv = (val: string | null | undefined) => {
+          if (val === null || val === undefined) return "";
+          const str = String(val);
+          if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+            return `"${str.replace(/"/g, '""')}"`;
+          }
+          return str;
+        };
+        
+        return [
+          lead.id,
+          escapeCsv(lead.name),
+          escapeCsv(lead.partyRole),
+          escapeCsv(lead.caseType),
+          escapeCsv(lead.caseNumber),
+          escapeCsv(lead.petitionerName),
+          lead.isFreshCase ? "Yes" : "No",
+          escapeCsv(lead.freshCasePhrase),
+          escapeCsv(lead.address),
+          escapeCsv(lead.phone),
+          lead.nextHearingDate || "",
+          escapeCsv(lead.courtName),
+          escapeCsv(lead.judgeName),
+          lead.confidence || "",
+          lead.createdAt ? new Date(lead.createdAt).toISOString() : ""
+        ].join(",");
+      });
+      
+      const csv = [csvHeaders, ...csvRows].join("\n");
+      
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", "attachment; filename=person-leads-export.csv");
+      res.send(csv);
+    } catch (error) {
+      console.error("Error exporting person leads:", error);
+      res.status(500).json({ error: "Failed to export person leads" });
+    }
+  });
+
+  app.get("/api/person-leads/:orderId", async (req, res) => {
+    try {
+      const orderId = parseInt(req.params.orderId);
+      const personLeads = await storage.getPersonLeadsByOrderId(orderId);
+      res.json(personLeads);
+    } catch (error) {
+      console.error("Error fetching person leads by order:", error);
+      res.status(500).json({ error: "Failed to fetch person leads" });
+    }
+  });
+
   app.post("/api/leads/:id/enrich", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
