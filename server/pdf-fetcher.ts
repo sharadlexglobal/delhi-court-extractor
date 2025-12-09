@@ -1,17 +1,8 @@
 import { storage } from "./storage";
-import type { CnrOrder } from "@shared/schema";
-import * as fs from "fs";
-import * as path from "path";
+import type { CnrOrder, Cnr } from "@shared/schema";
+import { ObjectStorageService } from "./objectStorage";
 
-const PDF_STORAGE_DIR = "./downloads/pdfs";
-
-async function ensureDirectoryExists(dir: string): Promise<void> {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-}
-
-async function fetchSinglePdf(order: CnrOrder): Promise<{ success: boolean; pdfPath?: string; pdfSize?: number; error?: string; httpStatus?: number }> {
+async function fetchSinglePdf(order: CnrOrder & { cnr?: Cnr }): Promise<{ success: boolean; pdfPath?: string; pdfSize?: number; error?: string; httpStatus?: number }> {
   try {
     const response = await fetch(order.url, {
       method: "GET",
@@ -42,16 +33,13 @@ async function fetchSinglePdf(order: CnrOrder): Promise<{ success: boolean; pdfP
       return { success: false, error: "PDF too small (likely error page)", httpStatus };
     }
 
-    await ensureDirectoryExists(PDF_STORAGE_DIR);
-    
-    const fileName = `${order.id}_${order.orderNo}_${order.orderDate}.pdf`;
-    const filePath = path.join(PDF_STORAGE_DIR, fileName);
-    
-    fs.writeFileSync(filePath, pdfBuffer);
+    const objectStorageService = new ObjectStorageService();
+    const cnrString = order.cnr?.cnr || `unknown_${order.cnrId}`;
+    const pdfPath = await objectStorageService.storePdf(pdfBuffer, cnrString, order.orderNo);
 
     return { 
       success: true, 
-      pdfPath: filePath, 
+      pdfPath, 
       pdfSize: pdfBuffer.length,
       httpStatus 
     };
@@ -61,7 +49,7 @@ async function fetchSinglePdf(order: CnrOrder): Promise<{ success: boolean; pdfP
   }
 }
 
-export async function fetchPdfsForJob(jobId: number, orders: CnrOrder[]): Promise<void> {
+export async function fetchPdfsForJob(jobId: number, orders: (CnrOrder & { cnr?: Cnr })[]): Promise<void> {
   await storage.updateProcessingJobStarted(jobId);
   
   let processed = 0;

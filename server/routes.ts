@@ -6,11 +6,26 @@ import { fetchPdfsForJob } from "./pdf-fetcher.js";
 import { extractTextsForJob } from "./text-extractor.js";
 import { classifyOrdersForJob } from "./classifier.js";
 import { enrichEntitiesForJob } from "./entity-enrichment.js";
+import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  app.get("/objects/:objectPath(*)", async (req, res) => {
+    const objectStorageService = new ObjectStorageService();
+    try {
+      const objectFile = await objectStorageService.getPdfFile(`/objects/${req.params.objectPath}`);
+      objectStorageService.downloadObject(objectFile, res);
+    } catch (error) {
+      if (error instanceof ObjectNotFoundError) {
+        return res.sendStatus(404);
+      }
+      console.error("Error fetching object:", error);
+      return res.sendStatus(500);
+    }
+  });
   
   app.get("/api/districts", async (_req, res) => {
     try {
