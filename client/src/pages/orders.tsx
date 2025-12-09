@@ -28,8 +28,11 @@ import {
   CheckCircle2,
   Clock,
   X,
+  FileType,
+  Brain,
 } from "lucide-react";
-import type { CnrOrder, OrderMetadata, District } from "@shared/schema";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import type { CnrOrder, OrderMetadata, District, PdfText } from "@shared/schema";
 
 interface OrderWithRelations extends CnrOrder {
   cnr?: { cnr: string; district?: District };
@@ -47,6 +50,19 @@ export default function Orders() {
 
   const { data: districts } = useQuery<District[]>({
     queryKey: ["/api/districts"],
+  });
+
+  const { data: extractedText, isLoading: isLoadingText } = useQuery<PdfText | null>({
+    queryKey: ["/api/orders", selectedOrder?.id, "text"],
+    queryFn: async () => {
+      const res = await fetch(`/api/orders/${selectedOrder!.id}/text`);
+      if (!res.ok) {
+        if (res.status === 404) return null;
+        throw new Error("Failed to fetch extracted text");
+      }
+      return res.json();
+    },
+    enabled: !!selectedOrder?.id,
   });
 
   const filteredOrders = orders?.filter((order) => {
@@ -246,9 +262,16 @@ export default function Orders() {
           </DialogHeader>
           {selectedOrder && (
             <Tabs defaultValue="summary" className="mt-4">
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="summary" data-testid="tab-summary">Summary</TabsTrigger>
-                <TabsTrigger value="metadata" data-testid="tab-metadata">Metadata</TabsTrigger>
+                <TabsTrigger value="text" data-testid="tab-text">
+                  <FileType className="mr-1 h-3 w-3" />
+                  Text
+                </TabsTrigger>
+                <TabsTrigger value="metadata" data-testid="tab-metadata">
+                  <Brain className="mr-1 h-3 w-3" />
+                  Classification
+                </TabsTrigger>
                 <TabsTrigger value="entities" data-testid="tab-entities">Entities</TabsTrigger>
               </TabsList>
               <TabsContent value="summary" className="mt-4 space-y-4">
@@ -289,50 +312,113 @@ export default function Orders() {
                   </div>
                 )}
               </TabsContent>
+              <TabsContent value="text" className="mt-4 space-y-4">
+                {isLoadingText ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="text-muted-foreground">Loading extracted text...</div>
+                  </div>
+                ) : extractedText ? (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-4 text-sm">
+                      <div className="flex items-center gap-1">
+                        <span className="text-muted-foreground">Pages:</span>
+                        <Badge variant="secondary">{extractedText.pageCount || "-"}</Badge>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-muted-foreground">Words:</span>
+                        <Badge variant="secondary">{extractedText.wordCount?.toLocaleString() || "-"}</Badge>
+                      </div>
+                      {extractedText.extractedAt && (
+                        <div className="flex items-center gap-1">
+                          <span className="text-muted-foreground">Extracted:</span>
+                          <span className="text-xs">
+                            {new Date(extractedText.extractedAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <p className="mb-2 text-sm font-medium text-muted-foreground">Extracted Text</p>
+                      <ScrollArea className="h-[300px] rounded-md border p-4">
+                        <pre className="whitespace-pre-wrap text-sm" data-testid="text-extracted-content">
+                          {extractedText.cleanedText || extractedText.rawText || "No text available"}
+                        </pre>
+                      </ScrollArea>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">
+                    No extracted text available. Text extraction may not have been run yet.
+                  </p>
+                )}
+              </TabsContent>
               <TabsContent value="metadata" className="mt-4 space-y-4">
                 {selectedOrder.metadata ? (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Case Type</p>
-                      <p>{selectedOrder.metadata.caseType || "-"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Judge</p>
-                      <p>{selectedOrder.metadata.judgeName || "-"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Court</p>
-                      <p>{selectedOrder.metadata.courtName || "-"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Order Type</p>
-                      <p>{selectedOrder.metadata.orderType || "-"}</p>
-                    </div>
-                    <div className="col-span-2">
-                      <p className="text-sm font-medium text-muted-foreground">Flags</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {selectedOrder.metadata.isSummonsOrder && (
-                          <Badge>Summons</Badge>
+                  <div className="space-y-4">
+                    {(selectedOrder.metadata.classificationConfidence || selectedOrder.metadata.llmModelUsed) && (
+                      <div className="flex flex-wrap items-center gap-4 rounded-md bg-muted/50 p-3">
+                        {selectedOrder.metadata.classificationConfidence && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-muted-foreground">Confidence:</span>
+                            <Badge 
+                              variant={selectedOrder.metadata.classificationConfidence > 0.8 ? "default" : "secondary"}
+                              className={selectedOrder.metadata.classificationConfidence > 0.8 ? "bg-emerald-500" : ""}
+                            >
+                              {(selectedOrder.metadata.classificationConfidence * 100).toFixed(0)}%
+                            </Badge>
+                          </div>
                         )}
-                        {selectedOrder.metadata.isNoticeOrder && (
-                          <Badge>Notice</Badge>
+                        {selectedOrder.metadata.llmModelUsed && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-muted-foreground">Model:</span>
+                            <span className="font-mono text-xs">{selectedOrder.metadata.llmModelUsed}</span>
+                          </div>
                         )}
-                        {selectedOrder.metadata.isFreshCaseAssignment && (
-                          <Badge>Fresh Case</Badge>
-                        )}
-                        {selectedOrder.metadata.isFinalOrder && (
-                          <Badge>Final Order</Badge>
-                        )}
-                        {selectedOrder.metadata.hasBusinessEntity && (
-                          <Badge className="bg-amber-500 text-amber-950">
-                            Business Entity
-                          </Badge>
-                        )}
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Case Type</p>
+                        <p>{selectedOrder.metadata.caseType || "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Judge</p>
+                        <p>{selectedOrder.metadata.judgeName || "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Court</p>
+                        <p>{selectedOrder.metadata.courtName || "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Order Type</p>
+                        <p>{selectedOrder.metadata.orderType || "-"}</p>
+                      </div>
+                      <div className="col-span-2">
+                        <p className="text-sm font-medium text-muted-foreground">Flags</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {selectedOrder.metadata.isSummonsOrder && (
+                            <Badge>Summons</Badge>
+                          )}
+                          {selectedOrder.metadata.isNoticeOrder && (
+                            <Badge>Notice</Badge>
+                          )}
+                          {selectedOrder.metadata.isFreshCaseAssignment && (
+                            <Badge>Fresh Case</Badge>
+                          )}
+                          {selectedOrder.metadata.isFinalOrder && (
+                            <Badge>Final Order</Badge>
+                          )}
+                          {selectedOrder.metadata.hasBusinessEntity && (
+                            <Badge className="bg-amber-500 text-amber-950">
+                              Business Entity
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <p className="text-muted-foreground">No metadata available yet</p>
+                  <p className="text-muted-foreground">No classification available yet. Run the classification job to analyze this order.</p>
                 )}
               </TabsContent>
               <TabsContent value="entities" className="mt-4">
