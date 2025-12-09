@@ -3,7 +3,7 @@ import { storage } from "./storage";
 import type { CnrOrder, InsertOrderMetadata, InsertBusinessEntity, InsertCaseEntityLink, InsertPersonLead } from "@shared/schema";
 
 const API_TIMEOUT_MS = 60000;
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 4;
 const INITIAL_RETRY_DELAY_MS = 1000;
 
 let openaiClient: OpenAI | null = null;
@@ -42,9 +42,13 @@ async function withRetry<T>(
         error instanceof Error && 
         (error.message.includes("timeout") || 
          error.message.includes("rate_limit") ||
+         error.message.includes("429") ||
          error.message.includes("503") ||
          error.message.includes("529") ||
-         error.message.includes("overloaded"));
+         error.message.includes("overloaded") ||
+         (error as any).status === 429 ||
+         (error as any).status === 503 ||
+         (error as any).status === 529);
       
       if (!isRetryable || attempt === maxRetries) {
         throw error;
