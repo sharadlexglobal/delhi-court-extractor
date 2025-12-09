@@ -1,0 +1,42 @@
+# Introduction to Scraper APIs
+
+ZenRows® introduces the Scraper APIs, **a specialized tool for seamless data extraction from major e-commerce platforms and real estate websites**. Designed for precision and performance, this API provides direct access to structured data, empowering businesses and developers to extract information effortlessly.
+
+## Key Features
+
+Discover the core functionalities of our API, designed to simplify data extraction and provide unparalleled accuracy. Here are the highlights:
+
+* **Domain-Specific Targeting:** Extract data from popular e-commerce sites like Amazon and Walmart or top real estate platforms like Zillow and Idealista.
+
+* **Geolocation Support:** Use the country parameter to access localized data for specific regions. We offer a pool of over 55 million residential IPs from more than 190 countries.
+
+* **Simplified Integration:** Predefined, intuitive endpoints make it easy to fetch product details, reviews, property listings, and search results without complex configurations.
+
+* **Reliable and Accurate:** Our API delivers consistently high-quality, structured data, ensuring you get the information you need with minimal effort.
+
+## Parameter Overview
+
+To make the most of our API, understanding the available parameters for each request is essential. Here's a breakdown:
+
+| PARAMETER                         | TYPE           | DEFAULT                                                              | DESCRIPTION                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------- | -------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [**apikey**](#api-key) `required` | `string`       | [**Get Your Free API Key**](https://app.zenrows.com/register?p=free) | Your unique API key for authentication.                                                                                                                                                                                                                                                                                                                       |
+| **country** `optional`            | `string`       |                                                                      | Target a specific country for geo-restricted data (e.g., `es` for Spain).                                                                                                                                                                                                                                                                                     |
+| **url**                           | `string <uri>` |                                                                      | The URL where the desired data must be retrieved from.                                                                                                                                                                                                                                                                                                        |
+| **lang**                          | `string`       |                                                                      | The language to display results. Supported values: `"en"`, `"es"`, `"ca"`, `"it"`, `"pt"`, `"fr"`, `"de"`, `"da"`, `"fi"`, `"nb"`, `"nl"`, `"pl"`, `"ro"`, `"ru"`, `"sv"`, `"el"`, `"zh"`, `"uk"`. Example: `lang=en`.                                                                                                                                        |
+| **page**                          | `number`       |                                                                      | The search results page to retrieve. Example: `page=2`.                                                                                                                                                                                                                                                                                                       |
+| **order**                         | `string`       |                                                                      | Determines the sorting of search results based on specified criteria. Supported values: `"relevance"`, `"lowest_price"`, `"highest_price"`, `"most_recent"`, `"least_recent"`, `"highest_price_reduction"`, `"lower_price_per_m2"`, `"highest_price_per_m2"`, `"biggest"`, `"smallest"`, `"highest_floors"`, `"lowest_floors"`. Example: `order=most_recent`. |
+| **tld**                           | `string`       | `.com`                                                               | The top-level domain of the website. Supported examples: `.com`, `.it`, `.pt`, `.de`, etc.                                                                                                                                                                                                                                                                    |
+| **country**                       | `string`       | `us`                                                                 | The originating country for the product retrieval. Example: `country=es`.                                                                                                                                                                                                                                                                                     |
+| **query** `required`              | `string`       |                                                                      | The search term you want to query on Walmart. Must be URL-encoded. Example: `Wireless+Headphones`.                                                                                                                                                                                                                                                            |
+
+<Note>Some parameters depend on the target website and/or the type of request, allowing for more precise and tailored data extraction. For more details, head to the desired API documentation.</Note>
+
+## Pricing
+
+ZenRows® offers flexible plans tailored to different web scraping needs, starting from \$69 per month. This entry-level plan allows you to scrape starting at \$1.05 per 1,000 requests, offering cost-effective options for varying volumes. For more demanding needs, our Enterprise plans scale up to \$0.75 per 1,000 requests.
+
+
+---
+
+> To find navigation and other pages in this documentation, fetch the llms.txt file at: https://docs.zenrows.com/llms.txt
