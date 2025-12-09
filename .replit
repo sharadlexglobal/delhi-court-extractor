@@ -4,7 +4,7 @@ hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["poppler_utils"]
+packages = ["poppler_utils", "dbus", "nss", "nspr", "atk", "cups", "libdrm", "mesa", "expat", "xorg.libxcb", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "glib", "pango", "cairo", "alsa-lib", "at-spi2-atk", "at-spi2-core", "gtk3", "libxkbcommon"]
 
 [deployment]
 deploymentTarget = "autoscale"

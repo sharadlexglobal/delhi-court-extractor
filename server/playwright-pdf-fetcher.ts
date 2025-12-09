@@ -3,6 +3,23 @@ import { storage } from "./storage";
 import type { CnrOrder, Cnr } from "@shared/schema";
 import { ObjectStorageService } from "./objectStorage";
 
+const ALLOWED_COURT_DOMAINS = [
+  'dcourts.gov.in',
+  'ecourts.gov.in',
+];
+
+function isAllowedUrl(url: string): boolean {
+  try {
+    const parsedUrl = new URL(url);
+    const hostname = parsedUrl.hostname.toLowerCase();
+    return ALLOWED_COURT_DOMAINS.some(domain => 
+      hostname === domain || hostname.endsWith('.' + domain)
+    );
+  } catch {
+    return false;
+  }
+}
+
 let browserInstance: Browser | null = null;
 
 async function getBrowser(): Promise<Browser> {
@@ -24,6 +41,14 @@ function isValidPdf(buffer: Buffer): boolean {
 async function fetchSinglePdfWithPlaywright(
   order: CnrOrder & { cnr?: Cnr }
 ): Promise<{ success: boolean; pdfPath?: string; pdfSize?: number; error?: string; httpStatus?: number }> {
+  if (!isAllowedUrl(order.url)) {
+    console.error(`[Playwright] URL not allowed: ${order.url}`);
+    return { 
+      success: false, 
+      error: 'URL not allowed. Only Delhi court domains are permitted.' 
+    };
+  }
+
   let context: BrowserContext | null = null;
   
   try {
@@ -188,6 +213,13 @@ export async function testPlaywrightPdfFetch(url: string): Promise<{
   error?: string;
   preview?: string;
 }> {
+  if (!isAllowedUrl(url)) {
+    return { 
+      success: false, 
+      error: 'URL not allowed. Only Delhi court domains (dcourts.gov.in, ecourts.gov.in) are permitted.' 
+    };
+  }
+
   let context: BrowserContext | null = null;
   
   try {
@@ -201,8 +233,8 @@ export async function testPlaywrightPdfFetch(url: string): Promise<{
     console.log(`[Playwright Test] Fetching: ${url}`);
     
     const response = await page.goto(url, { 
-      waitUntil: 'networkidle', 
-      timeout: 30000 
+      waitUntil: 'load', 
+      timeout: 60000 
     });
     
     if (!response) {
