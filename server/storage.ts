@@ -87,6 +87,7 @@ export interface IStorage {
   getOrdersWithTextNoMetadata(limit?: number): Promise<CnrOrder[]>;
   getPdfTextByOrderId(orderId: number): Promise<PdfText | undefined>;
   getEntitiesPendingEnrichment(limit?: number): Promise<BusinessEntity[]>;
+  getBusinessEntityByNormalizedName(nameNormalized: string): Promise<BusinessEntity | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -408,6 +409,11 @@ export class DatabaseStorage implements IStorage {
       .from(businessEntities)
       .where(eq(businessEntities.enrichmentStatus, "pending"))
       .limit(limit);
+  }
+
+  async getBusinessEntityByNormalizedName(nameNormalized: string): Promise<BusinessEntity | undefined> {
+    const [entity] = await db.select().from(businessEntities).where(eq(businessEntities.nameNormalized, nameNormalized));
+    return entity;
   }
 }
 

@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { cnrGenerationRequestSchema } from "@shared/schema";
 import { fetchPdfsForJob } from "./pdf-fetcher.js";
 import { extractTextsForJob } from "./text-extractor.js";
+import { classifyOrdersForJob } from "./classifier.js";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -362,6 +363,56 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error starting text extraction job:", error);
       res.status(500).json({ error: "Failed to start text extraction job" });
+    }
+  });
+
+  app.post("/api/jobs/classify", async (req, res) => {
+    try {
+      if (!process.env.OPENAI_API_KEY) {
+        return res.status(400).json({ error: "OPENAI_API_KEY is not configured. Please add your OpenAI API key to continue." });
+      }
+
+      const { limit = 100 } = req.body;
+      
+      const existingJobs = await storage.getProcessingJobs();
+      const runningJob = existingJobs.find(j => 
+        j.jobType === "classification" && (j.status === "processing" || j.status === "pending")
+      );
+      if (runningJob) {
+        return res.json({ 
+          message: "A classification job is already running",
+          jobId: runningJob.id,
+          totalOrders: runningJob.totalItems,
+          alreadyRunning: true
+        });
+      }
+      
+      const ordersNeedingClassification = await storage.getOrdersWithTextNoMetadata(limit);
+      
+      if (ordersNeedingClassification.length === 0) {
+        return res.json({ message: "No orders need classification", jobId: null });
+      }
+
+      const job = await storage.createProcessingJob({
+        jobType: "classification",
+        status: "pending",
+        totalItems: ordersNeedingClassification.length,
+        processedItems: 0,
+        successfulItems: 0,
+        failedItems: 0,
+        parameters: JSON.stringify({ limit, orderIds: ordersNeedingClassification.map(o => o.id) }),
+      });
+
+      classifyOrdersForJob(job.id, ordersNeedingClassification);
+
+      res.json({
+        jobId: job.id,
+        totalOrders: ordersNeedingClassification.length,
+        message: `Started classification job for ${ordersNeedingClassification.length} orders`,
+      });
+    } catch (error) {
+      console.error("Error starting classification job:", error);
+      res.status(500).json({ error: "Failed to start classification job" });
     }
   });
 
