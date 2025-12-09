@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, desc, and, sql, count } from "drizzle-orm";
+import { eq, desc, and, sql, count, isNull } from "drizzle-orm";
 import {
   districts,
   cnrs,
@@ -65,6 +65,10 @@ export interface IStorage {
   createProcessingJob(data: InsertProcessingJob): Promise<ProcessingJob>;
   updateProcessingJobProgress(id: number, processed: number, successful: number, failed: number): Promise<void>;
   updateProcessingJobStatus(id: number, status: string, error?: string): Promise<void>;
+  updateProcessingJobStarted(id: number): Promise<void>;
+  
+  getPendingOrders(limit?: number): Promise<CnrOrder[]>;
+  updateOrderPdfPath(id: number, pdfPath: string, pdfSizeBytes: number): Promise<void>;
   
   getAnalyticsOverview(): Promise<{
     totalCnrs: number;
@@ -172,14 +176,26 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateOrderPdfStatus(id: number, pdfExists: boolean, httpStatusCode?: number): Promise<void> {
-    await db
-      .update(cnrOrders)
-      .set({
-        pdfExists,
-        httpStatusCode,
-        lastCheckedAt: new Date(),
-      })
-      .where(eq(cnrOrders.id, id));
+    if (pdfExists) {
+      await db
+        .update(cnrOrders)
+        .set({
+          pdfExists,
+          httpStatusCode,
+          lastCheckedAt: new Date(),
+        })
+        .where(eq(cnrOrders.id, id));
+    } else {
+      await db
+        .update(cnrOrders)
+        .set({
+          pdfExists,
+          httpStatusCode,
+          retryCount: sql`${cnrOrders.retryCount} + 1`,
+          lastCheckedAt: new Date(),
+        })
+        .where(eq(cnrOrders.id, id));
+    }
   }
 
   async createPdfText(data: InsertPdfText): Promise<PdfText> {
@@ -290,6 +306,43 @@ export class DatabaseStorage implements IStorage {
       pdfsDownloaded: pdfCount?.count || 0,
       businessLeads: leadsCount?.count || 0,
     };
+  }
+
+  async getPendingOrders(limit = 100): Promise<CnrOrder[]> {
+    const maxRetries = 3;
+    return db
+      .select()
+      .from(cnrOrders)
+      .where(
+        and(
+          eq(cnrOrders.pdfExists, false),
+          sql`${cnrOrders.retryCount} < ${maxRetries}`
+        )
+      )
+      .orderBy(sql`${cnrOrders.retryCount} ASC, ${cnrOrders.lastCheckedAt} NULLS FIRST`)
+      .limit(limit);
+  }
+
+  async updateOrderPdfPath(id: number, pdfPath: string, pdfSizeBytes: number): Promise<void> {
+    await db
+      .update(cnrOrders)
+      .set({
+        pdfExists: true,
+        pdfPath,
+        pdfSizeBytes,
+        lastCheckedAt: new Date(),
+      })
+      .where(eq(cnrOrders.id, id));
+  }
+
+  async updateProcessingJobStarted(id: number): Promise<void> {
+    await db
+      .update(processingJobs)
+      .set({
+        status: "processing",
+        startedAt: new Date(),
+      })
+      .where(eq(processingJobs.id, id));
   }
 
   async getAnalyticsByDistrict(): Promise<{

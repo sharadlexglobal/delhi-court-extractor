@@ -44,6 +44,7 @@ export const cnrOrders = pgTable("cnr_orders", {
   pdfPath: text("pdf_path"),
   pdfSizeBytes: integer("pdf_size_bytes"),
   httpStatusCode: integer("http_status_code"),
+  retryCount: integer("retry_count").notNull().default(0),
   lastCheckedAt: timestamp("last_checked_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => [

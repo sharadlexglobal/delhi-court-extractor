@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { cnrGenerationRequestSchema } from "@shared/schema";
+import { fetchPdfsForJob } from "./pdf-fetcher";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -270,6 +271,50 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching job:", error);
       res.status(500).json({ error: "Failed to fetch job" });
+    }
+  });
+
+  app.post("/api/jobs/start-pdf-download", async (req, res) => {
+    try {
+      const { limit = 100 } = req.body;
+      
+      const existingJobs = await storage.getProcessingJobs();
+      const runningJob = existingJobs.find(j => j.status === "processing" || j.status === "pending");
+      if (runningJob) {
+        return res.json({ 
+          message: "A download job is already running",
+          jobId: runningJob.id,
+          totalOrders: runningJob.totalItems,
+          alreadyRunning: true
+        });
+      }
+      
+      const pendingOrders = await storage.getPendingOrders(limit);
+      
+      if (pendingOrders.length === 0) {
+        return res.json({ message: "No pending orders to process", jobId: null });
+      }
+
+      const job = await storage.createProcessingJob({
+        jobType: "pdf_download",
+        status: "pending",
+        totalItems: pendingOrders.length,
+        processedItems: 0,
+        successfulItems: 0,
+        failedItems: 0,
+        parameters: JSON.stringify({ limit, orderIds: pendingOrders.map(o => o.id) }),
+      });
+
+      fetchPdfsForJob(job.id, pendingOrders);
+
+      res.json({
+        jobId: job.id,
+        totalOrders: pendingOrders.length,
+        message: `Started PDF download job for ${pendingOrders.length} orders`,
+      });
+    } catch (error) {
+      console.error("Error starting PDF download job:", error);
+      res.status(500).json({ error: "Failed to start PDF download job" });
     }
   });
 

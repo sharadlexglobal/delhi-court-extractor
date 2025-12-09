@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -32,8 +32,8 @@ import {
 import { DataTable } from "@/components/data-table";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Hash, ChevronDown, Loader2, CheckCircle2, XCircle } from "lucide-react";
-import type { District, Cnr } from "@shared/schema";
+import { Hash, ChevronDown, Loader2, CheckCircle2, XCircle, Download, Play } from "lucide-react";
+import type { District, Cnr, ProcessingJob } from "@shared/schema";
 
 const generateFormSchema = z.object({
   districtId: z.string().min(1, "Select a district"),
@@ -53,6 +53,8 @@ interface GeneratedCnr extends Cnr {
 
 export default function CnrGenerator() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [activeJobId, setActiveJobId] = useState<number | null>(null);
+  const lastCompletedJobIdRef = useRef<number | null>(null);
   const { toast } = useToast();
 
   const { data: districts, isLoading: districtsLoading } = useQuery<District[]>({
@@ -62,6 +64,26 @@ export default function CnrGenerator() {
   const { data: recentCnrs, isLoading: cnrsLoading } = useQuery<GeneratedCnr[]>({
     queryKey: ["/api/cnrs?limit=50"],
   });
+
+  const { data: activeJob, isLoading: jobLoading } = useQuery<ProcessingJob>({
+    queryKey: ["/api/jobs", activeJobId],
+    enabled: activeJobId !== null,
+    refetchInterval: activeJobId ? 2000 : false,
+  });
+
+  const { data: allJobs } = useQuery<ProcessingJob[]>({
+    queryKey: ["/api/jobs"],
+    refetchInterval: activeJobId ? 2000 : 10000,
+  });
+
+  useEffect(() => {
+    if (allJobs && !activeJobId) {
+      const runningJob = allJobs.find(job => job.status === "processing" || job.status === "pending");
+      if (runningJob) {
+        setActiveJobId(runningJob.id);
+      }
+    }
+  }, [allJobs, activeJobId]);
 
   const form = useForm<GenerateFormValues>({
     resolver: zodResolver(generateFormSchema),
@@ -105,8 +127,67 @@ export default function CnrGenerator() {
     },
   });
 
+  const startDownloadMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/jobs/start-pdf-download", {
+        limit: 50,
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.jobId) {
+        lastCompletedJobIdRef.current = null;
+        setActiveJobId(data.jobId);
+        if (data.alreadyRunning) {
+          toast({
+            title: "Job Already Running",
+            description: `Tracking existing job (${data.totalOrders} orders)`,
+          });
+        } else {
+          toast({
+            title: "PDF Download Started",
+            description: `Processing ${data.totalOrders} orders`,
+          });
+        }
+      } else {
+        toast({
+          title: "No Pending Orders",
+          description: "All orders have been processed",
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Download Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  useEffect(() => {
+    if (activeJobId === null) return;
+    if (!activeJob) return;
+    
+    const jobId = activeJob.id;
+    const status = activeJob.status;
+    
+    if ((status === "completed" || status === "failed") && lastCompletedJobIdRef.current !== jobId) {
+      lastCompletedJobIdRef.current = jobId;
+      setActiveJobId(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/orders?limit=100"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/analytics/overview"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+    }
+  }, [activeJobId, activeJob?.id, activeJob?.status]);
+
   const onSubmit = (values: GenerateFormValues) => {
     generateMutation.mutate(values);
+  };
+
+  const handleStartDownload = () => {
+    startDownloadMutation.mutate();
   };
 
   const cnrColumns = [
@@ -146,18 +227,18 @@ export default function CnrGenerator() {
       render: (row: GeneratedCnr) => {
         if (row.isValid === null) {
           return (
-            <Badge variant="secondary" size="sm">
+            <Badge variant="secondary">
               Pending
             </Badge>
           );
         }
         return row.isValid ? (
-          <Badge variant="default" size="sm" className="bg-emerald-500">
+          <Badge variant="default" className="bg-emerald-500">
             <CheckCircle2 className="mr-1 h-3 w-3" />
             Valid
           </Badge>
         ) : (
-          <Badge variant="secondary" size="sm">
+          <Badge variant="secondary">
             <XCircle className="mr-1 h-3 w-3" />
             Invalid
           </Badge>
@@ -356,6 +437,84 @@ export default function CnrGenerator() {
                 </p>
               </div>
             )}
+
+            <div className="mt-6 border-t pt-6">
+              <h3 className="mb-3 text-sm font-medium text-muted-foreground">
+                Step 2: Download PDFs
+              </h3>
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={handleStartDownload}
+                disabled={startDownloadMutation.isPending || !!activeJobId}
+                data-testid="button-start-download"
+              >
+                {startDownloadMutation.isPending || activeJobId ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Downloading PDFs...
+                  </>
+                ) : (
+                  <>
+                    <Download className="mr-2 h-4 w-4" />
+                    Start PDF Download
+                  </>
+                )}
+              </Button>
+
+              {activeJob && (
+                <div className="mt-4 space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Progress:</span>
+                    <span className="font-mono">
+                      {activeJob.processedItems} / {activeJob.totalItems}
+                    </span>
+                  </div>
+                  <Progress
+                    value={activeJob.totalItems > 0 
+                      ? (activeJob.processedItems / activeJob.totalItems) * 100 
+                      : 0
+                    }
+                    className="h-2"
+                  />
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-emerald-600">
+                      Success: {activeJob.successfulItems}
+                    </span>
+                    <span className="text-red-600">
+                      Failed: {activeJob.failedItems}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {allJobs && allJobs.length > 0 && !activeJobId && (
+                <div className="mt-4">
+                  <h4 className="mb-2 text-xs font-medium text-muted-foreground">
+                    Recent Jobs
+                  </h4>
+                  <div className="space-y-2">
+                    {allJobs.slice(0, 3).map((job) => (
+                      <div
+                        key={job.id}
+                        className="flex items-center justify-between rounded-md bg-muted/50 p-2 text-xs"
+                      >
+                        <span className="font-mono">Job #{job.id}</span>
+                        <Badge 
+                          variant={job.status === "completed" ? "default" : "secondary"}
+                          className={job.status === "completed" ? "bg-emerald-500" : ""}
+                        >
+                          {job.status}
+                        </Badge>
+                        <span>
+                          {job.successfulItems}/{job.totalItems}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
 
@@ -364,7 +523,7 @@ export default function CnrGenerator() {
             <CardTitle className="text-lg font-semibold">
               Generated CNRs
             </CardTitle>
-            <Badge variant="secondary" size="sm">
+            <Badge variant="secondary">
               {recentCnrs?.length ?? 0} CNRs
             </Badge>
           </CardHeader>
