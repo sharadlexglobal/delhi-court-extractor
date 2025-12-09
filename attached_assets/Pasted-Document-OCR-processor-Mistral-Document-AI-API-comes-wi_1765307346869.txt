@@ -1,0 +1,203 @@
+Document OCR processor​
+Mistral Document AI API comes with a Document OCR (Optical Character Recognition) processor, powered by our latest OCR model mistral-ocr-latest, which enables you to extract text and structured content from PDF documents.
+
+
+Key features:
+Extracts text content while maintaining document structure and hierarchy
+Preserves formatting like headers, paragraphs, lists and tables
+Returns results in markdown format for easy parsing and rendering
+Handles complex layouts including multi-column text and mixed content
+Processes documents at scale with high accuracy
+document_url: pdf, pptx, docx and more...
+
+The OCR processor returns the extracted text content, images bboxes and metadata about the document structure, making it easy to work with the recognized content programmatically.
+OCR with PDF​
+python
+typescript
+curl
+import { Mistral } from '@mistralai/mistralai';
+
+const apiKey = process.env.MISTRAL_API_KEY;
+const client = new Mistral({apiKey: apiKey});
+
+const ocrResponse = await client.ocr.process({
+   model: "mistral-ocr-latest",
+   document: {
+       type: "document_url",
+       documentUrl: "https://arxiv.org/pdf/2201.04234"
+   },
+   includeImageBase64: true
+});
+
+
+Or passing a Base64 encoded pdf:
+
+import { Mistral } from '@mistralai/mistralai';
+import fs from 'fs';
+
+async function encodePdf(pdfPath) {
+    try {
+        // Read the PDF file as a buffer
+        const pdfBuffer = fs.readFileSync(pdfPath);
+
+        // Convert the buffer to a Base64-encoded string
+        const base64Pdf = pdfBuffer.toString('base64');
+        return base64Pdf;
+    } catch (error) {
+        console.error(`Error: ${error}`);
+        return null;
+    }
+}
+
+const pdfPath = "path_to_your_pdf.pdf";
+
+const base64Pdf = await encodePdf(pdfPath);
+
+const apiKey = process.env.MISTRAL_API_KEY;
+const client = new Mistral({ apiKey: apiKey });
+
+try {
+    const ocrResponse = await client.ocr.process({
+        model: "mistral-ocr-latest",
+        document: {
+            type: "document_url",
+            documentUrl: "data:application/pdf;base64," + base64Pdf
+        },
+        includeImageBase64: true
+    });
+    console.log(ocrResponse);
+} catch (error) {
+    console.error("Error processing OCR:", error);
+}
+
+OCR with uploaded PDF​
+You can also upload a PDF file and get the OCR results from the uploaded PDF.
+Upload a file
+import { Mistral } from '@mistralai/mistralai';
+import fs from 'fs';
+
+const apiKey = process.env.MISTRAL_API_KEY;
+
+const client = new Mistral({apiKey: apiKey});
+
+const uploadedFile = fs.readFileSync('uploaded_file.pdf');
+const uploadedPdf = await client.files.upload({
+    file: {
+        fileName: "uploaded_file.pdf",
+        content: uploadedFile,
+    },
+    purpose: "ocr"
+});
+
+Retrieve File
+
+const retrievedFile = await client.files.retrieve({
+    fileId: uploadedPdf.id
+});
+
+
+id='00edaf84-95b0-45db-8f83-f71138491f23' object='file' size_bytes=3749788 created_at=1741023462 filename='uploaded_file.pdf' purpose='ocr' sample_type='ocr_input' source='upload' deleted=False num_lines=None
+
+Get signed URL
+const signedUrl = await client.files.getSignedUrl({
+    fileId: uploadedPdf.id,
+});
+
+
+Get OCR results​
+
+import { Mistral } from '@mistralai/mistralai';
+
+const apiKey = process.env.MISTRAL_API_KEY;
+const client = new Mistral({apiKey: apiKey});
+
+const ocrResponse = await client.ocr.process({
+    model: "mistral-ocr-latest",
+    document: {
+        type: "document_url",
+        documentUrl: signedUrl.url,
+    },
+    includeImageBase64: true
+});
+
+
+OCR API
+OCR
+
+https://api.mistral.ai/v1/ocr
+
+Content type
+application/json
+Copy
+Expand allCollapse all
+{
+"model": "string",
+"id": "string",
+"document":
+{
+"document_url": "string",
+"document_name": "string",
+"type": "document_url"
+},
+"pages":
+[
+0
+],
+"include_image_base64": true,
+"image_limit": 0,
+"image_min_size": 0
+}
+
+Authorizations:
+ApiKey
+Request Body schema: application/json
+required
+model
+required
+Model (string) or Model (null) (Model)
+id
+string (Id)
+document
+required
+DocumentURLChunk (object) or ImageURLChunk (object) (Document)
+Document to run OCR on
+pages
+Array of Pages (integers) or Pages (null) (Pages)
+Specific pages user wants to process in various formats: single number, range, or list of both. Starts from 0
+include_image_base64
+Include Image Base64 (boolean) or Include Image Base64 (null) (Include Image Base64)
+Include image URLs in response
+image_limit
+Image Limit (integer) or Image Limit (null) (Image Limit)
+Max images to extract
+image_min_size
+Image Min Size (integer) or Image Min Size (null) (Image Min Size)
+Minimum height and width of image to extract
+
+Responses
+200
+Successful Response
+422
+Validation Error
+
+
+Response samples:
+200
+422
+Content type
+application/json
+Copy
+Expand allCollapse all
+{
+"pages":
+[
+{}
+],
+"model": "string",
+"usage_info":
+{
+"pages_processed": 0,
+"doc_size_bytes": 0
+}
+}
+
