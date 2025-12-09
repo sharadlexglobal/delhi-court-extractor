@@ -755,8 +755,8 @@ export async function registerRoutes(
       
       let pendingOrders;
       if (orderIds && Array.isArray(orderIds) && orderIds.length > 0) {
-        pendingOrders = await storage.getOrdersByIds(orderIds);
-        pendingOrders = pendingOrders.filter(o => o.downloadStatus === 'pending');
+        const allOrders = await storage.getOrdersByIds(orderIds);
+        pendingOrders = allOrders.filter(o => o.pdfExists === false && o.retryCount < 3);
       } else {
         pendingOrders = await storage.getPendingOrders(limit);
       }

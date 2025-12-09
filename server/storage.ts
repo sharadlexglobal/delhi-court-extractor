@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, desc, and, sql, count, isNull } from "drizzle-orm";
+import { eq, desc, and, sql, count, isNull, inArray } from "drizzle-orm";
 import {
   districts,
   cnrs,
@@ -385,10 +385,12 @@ export class DatabaseStorage implements IStorage {
 
   async getOrdersByIds(ids: number[]): Promise<CnrOrder[]> {
     if (ids.length === 0) return [];
+    const validIds = ids.filter(id => Number.isInteger(id) && id > 0);
+    if (validIds.length === 0) return [];
     return db
       .select()
       .from(cnrOrders)
-      .where(sql`${cnrOrders.id} = ANY(ARRAY[${sql.raw(ids.join(','))}]::int[])`);
+      .where(inArray(cnrOrders.id, validIds));
   }
 
   async updateOrderPdfPath(id: number, pdfPath: string, pdfSizeBytes: number): Promise<void> {
