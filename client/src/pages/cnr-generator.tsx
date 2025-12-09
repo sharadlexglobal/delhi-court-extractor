@@ -32,7 +32,10 @@ import {
 import { DataTable } from "@/components/data-table";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Hash, ChevronDown, Loader2, CheckCircle2, XCircle, Download, Play, FileText, Brain, Sparkles } from "lucide-react";
+import { Hash, ChevronDown, Loader2, CheckCircle2, XCircle, Download, Play, FileText, Brain, Sparkles, CalendarIcon } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { format } from "date-fns";
 import type { District, Cnr, ProcessingJob } from "@shared/schema";
 
 const generateFormSchema = z.object({
@@ -42,6 +45,7 @@ const generateFormSchema = z.object({
   year: z.coerce.number().int().min(2000).max(2030),
   daysAhead: z.coerce.number().int().min(1).max(60).default(30),
   maxOrderNo: z.coerce.number().int().min(1).max(20).default(10),
+  startDate: z.date(),
 });
 
 type GenerateFormValues = z.infer<typeof generateFormSchema>;
@@ -94,6 +98,7 @@ export default function CnrGenerator() {
       year: new Date().getFullYear(),
       daysAhead: 30,
       maxOrderNo: 10,
+      startDate: new Date(),
     },
   });
 
@@ -106,6 +111,7 @@ export default function CnrGenerator() {
         year: values.year,
         daysAhead: values.daysAhead,
         maxOrderNo: values.maxOrderNo,
+        startDate: values.startDate.toISOString().split("T")[0],
       });
       return response.json();
     },
@@ -473,6 +479,42 @@ export default function CnrGenerator() {
                       <FormControl>
                         <Input type="number" {...field} data-testid="input-year" />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="startDate"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Start Date</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant="outline"
+                              className="w-full justify-start text-left font-normal"
+                              data-testid="button-start-date"
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {field.value ? format(field.value, "PPP") : "Pick a date"}
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormDescription>
+                        Order dates will start from this date
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

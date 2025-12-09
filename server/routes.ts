@@ -72,7 +72,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: validation.error.errors });
       }
 
-      const { districtId, startSerial, endSerial, year, daysAhead, maxOrderNo } = validation.data;
+      const { districtId, startSerial, endSerial, year, daysAhead, maxOrderNo, startDate } = validation.data;
 
       const district = await storage.getDistrictById(districtId);
       if (!district) {
@@ -112,10 +112,10 @@ export async function registerRoutes(
         encodedPayload: string;
       }> = [];
 
-      const today = new Date();
+      const baseDate = startDate ? new Date(startDate) : new Date();
       for (const cnr of createdCnrs) {
         for (let day = 0; day < daysAhead; day++) {
-          const orderDate = new Date(today);
+          const orderDate = new Date(baseDate);
           orderDate.setDate(orderDate.getDate() + day);
           const dateStr = orderDate.toISOString().split("T")[0];
 

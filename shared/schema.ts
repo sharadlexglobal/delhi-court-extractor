@@ -295,6 +295,7 @@ export const cnrGenerationRequestSchema = z.object({
   year: z.number().int().min(2000).max(2030),
   daysAhead: z.number().int().min(1).max(60).default(30),
   maxOrderNo: z.number().int().min(1).max(20).default(10),
+  startDate: z.string().optional(),
 });
 
 export type CnrGenerationRequest = z.infer<typeof cnrGenerationRequestSchema>;
