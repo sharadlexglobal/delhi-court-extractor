@@ -2,6 +2,10 @@ import OpenAI from "openai";
 import { storage } from "./storage";
 import type { CnrOrder, InsertOrderMetadata, InsertBusinessEntity, InsertCaseEntityLink, InsertPersonLead } from "@shared/schema";
 
+const API_TIMEOUT_MS = 60000;
+const MAX_RETRIES = 3;
+const INITIAL_RETRY_DELAY_MS = 1000;
+
 let openaiClient: OpenAI | null = null;
 
 function getOpenAI(): OpenAI {
@@ -11,9 +15,48 @@ function getOpenAI(): OpenAI {
   if (!openaiClient) {
     openaiClient = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
+      timeout: API_TIMEOUT_MS,
+      maxRetries: 0,
     });
   }
   return openaiClient;
+}
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  operationName: string,
+  maxRetries: number = MAX_RETRIES
+): Promise<T> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error as Error;
+      const isRetryable = 
+        error instanceof Error && 
+        (error.message.includes("timeout") || 
+         error.message.includes("rate_limit") ||
+         error.message.includes("503") ||
+         error.message.includes("529") ||
+         error.message.includes("overloaded"));
+      
+      if (!isRetryable || attempt === maxRetries) {
+        throw error;
+      }
+      
+      const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+      console.log(`${operationName} attempt ${attempt} failed, retrying in ${delay}ms...`);
+      await sleep(delay);
+    }
+  }
+  
+  throw lastError;
 }
 
 interface ClassificationResult {
@@ -115,15 +158,18 @@ export async function classifyOrderText(orderId: number, text: string): Promise<
   const truncatedText = text.length > 15000 ? text.substring(0, 15000) + "..." : text;
 
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: CLASSIFICATION_PROMPT },
-        { role: "user", content: `Analyze this court order:\n\n${truncatedText}` }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.1,
-    });
+    const response = await withRetry(
+      async () => openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: CLASSIFICATION_PROMPT },
+          { role: "user", content: `Analyze this court order:\n\n${truncatedText}` }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.1,
+      }),
+      `Classification order ${orderId}`
+    );
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
@@ -146,7 +192,7 @@ export async function classifyOrderText(orderId: number, text: string): Promise<
     
     return result;
   } catch (error) {
-    console.error(`Error classifying order ${orderId}:`, error);
+    console.error(`Error classifying order ${orderId} after retries:`, error);
     return null;
   }
 }
