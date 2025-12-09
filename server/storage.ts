@@ -82,6 +82,11 @@ export interface IStorage {
     ordersCount: number;
     leadsCount: number;
   }[]>;
+  
+  getOrdersWithPdfNoText(limit?: number): Promise<CnrOrder[]>;
+  getOrdersWithTextNoMetadata(limit?: number): Promise<CnrOrder[]>;
+  getPdfTextByOrderId(orderId: number): Promise<PdfText | undefined>;
+  getEntitiesPendingEnrichment(limit?: number): Promise<BusinessEntity[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -369,6 +374,40 @@ export class DatabaseStorage implements IStorage {
       ordersCount: Number(r.ordersCount) || 0,
       leadsCount: 0,
     }));
+  }
+
+  async getOrdersWithPdfNoText(limit = 100): Promise<CnrOrder[]> {
+    return db
+      .select({ order: cnrOrders })
+      .from(cnrOrders)
+      .leftJoin(pdfTexts, eq(cnrOrders.id, pdfTexts.cnrOrderId))
+      .where(and(eq(cnrOrders.pdfExists, true), isNull(pdfTexts.id)))
+      .limit(limit)
+      .then(rows => rows.map(r => r.order));
+  }
+
+  async getOrdersWithTextNoMetadata(limit = 100): Promise<CnrOrder[]> {
+    return db
+      .select({ order: cnrOrders })
+      .from(cnrOrders)
+      .innerJoin(pdfTexts, eq(cnrOrders.id, pdfTexts.cnrOrderId))
+      .leftJoin(orderMetadata, eq(cnrOrders.id, orderMetadata.cnrOrderId))
+      .where(isNull(orderMetadata.id))
+      .limit(limit)
+      .then(rows => rows.map(r => r.order));
+  }
+
+  async getPdfTextByOrderId(orderId: number): Promise<PdfText | undefined> {
+    const [pdfText] = await db.select().from(pdfTexts).where(eq(pdfTexts.cnrOrderId, orderId));
+    return pdfText;
+  }
+
+  async getEntitiesPendingEnrichment(limit = 100): Promise<BusinessEntity[]> {
+    return db
+      .select()
+      .from(businessEntities)
+      .where(eq(businessEntities.enrichmentStatus, "pending"))
+      .limit(limit);
   }
 }
 
