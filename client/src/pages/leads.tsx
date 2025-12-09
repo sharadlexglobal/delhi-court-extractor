@@ -228,7 +228,6 @@ export default function Leads() {
                         </p>
                       </div>
                       <Badge
-                        size="sm"
                         className={statusColors[entity.enrichmentStatus || "pending"]}
                       >
                         {entity.enrichmentStatus || "pending"}
@@ -425,7 +424,7 @@ export default function Leads() {
                             </div>
                           </div>
                           {contact.isPrimary && (
-                            <Badge size="sm" variant="secondary">
+                            <Badge variant="secondary">
                               Primary
                             </Badge>
                           )}

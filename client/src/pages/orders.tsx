@@ -109,18 +109,18 @@ export default function Orders() {
       render: (row: OrderWithRelations) => (
         <div className="flex flex-wrap gap-1">
           {row.pdfExists ? (
-            <Badge variant="default" size="sm" className="bg-emerald-500">
+            <Badge variant="default" className="bg-emerald-500">
               <CheckCircle2 className="mr-1 h-3 w-3" />
               PDF
             </Badge>
           ) : (
-            <Badge variant="secondary" size="sm">
+            <Badge variant="secondary">
               <Clock className="mr-1 h-3 w-3" />
               Pending
             </Badge>
           )}
           {row.metadata?.hasBusinessEntity && (
-            <Badge variant="default" size="sm" className="bg-amber-500 text-amber-950">
+            <Badge variant="default" className="bg-amber-500 text-amber-950">
               <Briefcase className="mr-1 h-3 w-3" />
               Lead
             </Badge>
@@ -302,19 +302,19 @@ export default function Orders() {
                       <p className="text-sm font-medium text-muted-foreground">Flags</p>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {selectedOrder.metadata.isSummonsOrder && (
-                          <Badge size="sm">Summons</Badge>
+                          <Badge>Summons</Badge>
                         )}
                         {selectedOrder.metadata.isNoticeOrder && (
-                          <Badge size="sm">Notice</Badge>
+                          <Badge>Notice</Badge>
                         )}
                         {selectedOrder.metadata.isFreshCaseAssignment && (
-                          <Badge size="sm">Fresh Case</Badge>
+                          <Badge>Fresh Case</Badge>
                         )}
                         {selectedOrder.metadata.isFinalOrder && (
-                          <Badge size="sm">Final Order</Badge>
+                          <Badge>Final Order</Badge>
                         )}
                         {selectedOrder.metadata.hasBusinessEntity && (
-                          <Badge size="sm" className="bg-amber-500 text-amber-950">
+                          <Badge className="bg-amber-500 text-amber-950">
                             Business Entity
                           </Badge>
                         )}

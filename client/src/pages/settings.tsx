@@ -57,12 +57,12 @@ export default function Settings() {
       header: "Status",
       render: (row: District) =>
         row.isActive ? (
-          <Badge variant="default" size="sm" className="bg-emerald-500">
+          <Badge variant="default" className="bg-emerald-500">
             <CheckCircle2 className="mr-1 h-3 w-3" />
             Active
           </Badge>
         ) : (
-          <Badge variant="secondary" size="sm">
+          <Badge variant="secondary">
             <XCircle className="mr-1 h-3 w-3" />
             Inactive
           </Badge>
@@ -130,7 +130,7 @@ export default function Settings() {
                   <p className="font-medium">PostgreSQL</p>
                   <p className="text-sm text-muted-foreground">Database connection</p>
                 </div>
-                <Badge variant="default" size="sm" className="bg-emerald-500">
+                <Badge variant="default" className="bg-emerald-500">
                   Connected
                 </Badge>
               </div>
@@ -165,7 +165,7 @@ export default function Settings() {
                   <p className="font-medium">OpenAI</p>
                   <p className="text-sm text-muted-foreground">GPT-4o-mini for classification</p>
                 </div>
-                <Badge variant="secondary" size="sm">
+                <Badge variant="secondary">
                   Not Configured
                 </Badge>
               </div>

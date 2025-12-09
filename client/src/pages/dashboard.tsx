@@ -64,7 +64,7 @@ export default function Dashboard() {
       key: "pdfExists",
       header: "Status",
       render: (row: RecentOrder) => (
-        <Badge variant={row.pdfExists ? "default" : "secondary"} size="sm">
+        <Badge variant={row.pdfExists ? "default" : "secondary"}>
           {row.pdfExists ? (
             <>
               <CheckCircle2 className="mr-1 h-3 w-3" />
@@ -84,7 +84,7 @@ export default function Dashboard() {
       header: "Business Lead",
       render: (row: RecentOrder) =>
         row.metadata?.hasBusinessEntity ? (
-          <Badge variant="default" size="sm" className="bg-amber-500 text-amber-950">
+          <Badge variant="default" className="bg-amber-500 text-amber-950">
             <Briefcase className="mr-1 h-3 w-3" />
             Lead
           </Badge>
