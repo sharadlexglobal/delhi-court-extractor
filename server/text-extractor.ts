@@ -1,9 +1,8 @@
 import { storage } from "./storage";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import type { CnrOrder } from "@shared/schema";
-import { createRequire } from "module";
+import { Mistral } from "@mistralai/mistralai";
 
-const require = createRequire(import.meta.url);
 const objectStorage = new ObjectStorageService();
 
 export interface ExtractionResult {
@@ -23,26 +22,51 @@ function cleanText(text: string): string {
 }
 
 export async function extractTextFromPdf(pdfPath: string): Promise<ExtractionResult> {
+  const apiKey = process.env.MISTRAL_API_KEY;
+  
+  if (!apiKey) {
+    return {
+      success: false,
+      rawText: "",
+      cleanedText: "",
+      pageCount: 0,
+      wordCount: 0,
+      errorMessage: "MISTRAL_API_KEY is not configured",
+    };
+  }
+
   try {
     const pdfBuffer = await objectStorage.getPdfBuffer(pdfPath);
-
-    const { PDFParse } = require("pdf-parse");
-    const parser = new PDFParse({ data: pdfBuffer });
-    await parser.load();
+    const base64Pdf = pdfBuffer.toString("base64");
     
-    const textResult = await parser.getText();
-    const rawText = textResult.text || "";
-    const info = await parser.getInfo();
-    const cleanedText = cleanText(rawText);
+    console.log(`[Mistral OCR] Processing PDF: ${pdfPath} (${pdfBuffer.length} bytes)`);
+    
+    const client = new Mistral({ apiKey });
+    
+    const ocrResponse = await client.ocr.process({
+      model: "mistral-ocr-latest",
+      document: {
+        type: "document_url",
+        documentUrl: `data:application/pdf;base64,${base64Pdf}`,
+      },
+      includeImageBase64: false,
+    });
 
-    await parser.destroy();
+    const pages = ocrResponse.pages || [];
+    const pageCount = pages.length;
+    
+    const rawText = pages.map((page: any) => page.markdown || "").join("\n\n");
+    const cleanedText = cleanText(rawText);
+    const wordCount = cleanedText.split(/\s+/).filter(Boolean).length;
+
+    console.log(`[Mistral OCR] Extracted ${pageCount} pages, ${wordCount} words from ${pdfPath}`);
 
     return {
       success: true,
       rawText,
       cleanedText,
-      pageCount: info?.numPages || 0,
-      wordCount: cleanedText.split(/\s+/).filter(Boolean).length,
+      pageCount,
+      wordCount,
     };
   } catch (error) {
     if (error instanceof ObjectNotFoundError) {
@@ -55,13 +79,15 @@ export async function extractTextFromPdf(pdfPath: string): Promise<ExtractionRes
         errorMessage: `PDF not found in Object Storage: ${pdfPath}`,
       };
     }
+    const errorMessage = error instanceof Error ? error.message : "Unknown extraction error";
+    console.error(`[Mistral OCR] Error extracting text: ${errorMessage}`);
     return {
       success: false,
       rawText: "",
       cleanedText: "",
       pageCount: 0,
       wordCount: 0,
-      errorMessage: error instanceof Error ? error.message : "Unknown extraction error",
+      errorMessage,
     };
   }
 }
@@ -100,7 +126,10 @@ export async function extractTextsForJob(jobId: number, orders: CnrOrder[]): Pro
       }
 
       await storage.updateProcessingJobProgress(jobId, processed, successful, failed);
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
     } catch (error) {
+      processed++;
       failed++;
       console.error(`Error processing order ${order.id}:`, error);
       await storage.updateProcessingJobProgress(jobId, processed, successful, failed);
