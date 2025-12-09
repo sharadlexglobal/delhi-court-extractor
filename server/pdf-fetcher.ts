@@ -12,39 +12,52 @@ function buildScraperApiUrl(targetUrl: string): string {
     api_key: SCRAPER_API_KEY,
     url: targetUrl,
     country_code: 'in',
+    binary_target: 'true',
   });
   return `http://api.scraperapi.com?${params.toString()}`;
+}
+
+function isValidPdf(buffer: Buffer): boolean {
+  if (buffer.length < 8) return false;
+  const header = buffer.slice(0, 8).toString('ascii');
+  return header.startsWith('%PDF-');
 }
 
 async function fetchSinglePdf(order: CnrOrder & { cnr?: Cnr }): Promise<{ success: boolean; pdfPath?: string; pdfSize?: number; error?: string; httpStatus?: number }> {
   try {
     const fetchUrl = buildScraperApiUrl(order.url);
-    console.log(`Fetching PDF via ${SCRAPER_API_KEY ? 'ScraperAPI (Indian IP)' : 'direct'}: ${order.url}`);
+    console.log(`Fetching PDF via ${SCRAPER_API_KEY ? 'ScraperAPI (Indian IP, binary_target)' : 'direct'}: ${order.url}`);
     
     const response = await fetch(fetchUrl, {
       method: "GET",
       headers: {
-        "Accept": "application/pdf,*/*",
+        "Accept": "application/pdf, application/octet-stream, */*",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
     });
 
     const httpStatus = response.status;
+    const contentType = response.headers.get("content-type") || "";
+    console.log(`Response: status=${httpStatus}, content-type=${contentType}`);
 
     if (!response.ok) {
-      return { success: false, error: `HTTP ${httpStatus}`, httpStatus };
-    }
-
-    const contentType = response.headers.get("content-type") || "";
-    
-    if (!contentType.includes("pdf") && !contentType.includes("octet-stream")) {
-      await storage.updateOrderPdfStatus(order.id, false, httpStatus);
-      return { success: false, error: "Not a PDF response", httpStatus };
+      const errorText = await response.text().catch(() => "");
+      console.log(`Error response body (first 200 chars): ${errorText.slice(0, 200)}`);
+      return { success: false, error: `HTTP ${httpStatus}: ${errorText.slice(0, 100)}`, httpStatus };
     }
 
     const buffer = await response.arrayBuffer();
     const pdfBuffer = Buffer.from(buffer);
+    console.log(`Downloaded ${pdfBuffer.length} bytes`);
 
-    if (pdfBuffer.length < 100) {
+    if (!isValidPdf(pdfBuffer)) {
+      const preview = pdfBuffer.slice(0, 200).toString('utf8');
+      console.log(`Invalid PDF header. First 200 bytes: ${preview}`);
+      await storage.updateOrderPdfStatus(order.id, false, httpStatus);
+      return { success: false, error: `Invalid PDF: ${preview.slice(0, 50)}`, httpStatus };
+    }
+
+    if (pdfBuffer.length < 1000) {
       await storage.updateOrderPdfStatus(order.id, false, httpStatus);
       return { success: false, error: "PDF too small (likely error page)", httpStatus };
     }
@@ -53,6 +66,7 @@ async function fetchSinglePdf(order: CnrOrder & { cnr?: Cnr }): Promise<{ succes
     const cnrString = order.cnr?.cnr || `unknown_${order.cnrId}`;
     const pdfPath = await objectStorageService.storePdf(pdfBuffer, cnrString, order.orderNo);
 
+    console.log(`PDF saved successfully: ${pdfPath} (${pdfBuffer.length} bytes)`);
     return { 
       success: true, 
       pdfPath, 
@@ -61,6 +75,7 @@ async function fetchSinglePdf(order: CnrOrder & { cnr?: Cnr }): Promise<{ succes
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error(`PDF fetch error: ${errorMessage}`);
     return { success: false, error: errorMessage };
   }
 }
