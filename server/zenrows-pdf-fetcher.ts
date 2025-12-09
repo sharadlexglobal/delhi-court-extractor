@@ -153,6 +153,7 @@ export async function fetchPdfsWithZenRows(
       processed++;
       failed++;
       console.error(`[ZenRows] Error processing order ${order.id}:`, error);
+      await storage.updateOrderPdfStatus(order.id, false);
       await storage.updateProcessingJobProgress(jobId, processed, successful, failed);
     }
   }
