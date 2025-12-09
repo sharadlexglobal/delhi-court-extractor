@@ -148,6 +148,31 @@ export const caseEntityLinks = pgTable("case_entity_links", {
   uniqueIndex("uq_case_entity").on(table.cnrOrderId, table.entityId),
 ]);
 
+export const personLeads = pgTable("person_leads", {
+  id: serial("id").primaryKey(),
+  uuid: varchar("uuid", { length: 36 }).notNull().unique().default(sql`gen_random_uuid()`),
+  cnrOrderId: integer("cnr_order_id").notNull().references(() => cnrOrders.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 500 }).notNull(),
+  nameNormalized: varchar("name_normalized", { length: 500 }).notNull(),
+  partyRole: varchar("party_role", { length: 50 }).notNull(),
+  caseType: varchar("case_type", { length: 100 }),
+  caseNumber: varchar("case_number", { length: 100 }),
+  petitionerName: text("petitioner_name"),
+  isFreshCase: boolean("is_fresh_case").notNull().default(false),
+  freshCasePhrase: text("fresh_case_phrase"),
+  address: text("address"),
+  phone: varchar("phone", { length: 50 }),
+  nextHearingDate: date("next_hearing_date"),
+  courtName: varchar("court_name", { length: 200 }),
+  judgeName: varchar("judge_name", { length: 200 }),
+  confidence: real("confidence"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => [
+  index("idx_person_leads_name").on(table.nameNormalized),
+  index("idx_person_leads_fresh_case").on(table.isFreshCase),
+  index("idx_person_leads_order").on(table.cnrOrderId),
+]);
+
 export const processingJobs = pgTable("processing_jobs", {
   id: serial("id").primaryKey(),
   uuid: varchar("uuid", { length: 36 }).notNull().unique().default(sql`gen_random_uuid()`),
@@ -223,6 +248,13 @@ export const caseEntityLinksRelations = relations(caseEntityLinks, ({ one }) => 
   }),
 }));
 
+export const personLeadsRelations = relations(personLeads, ({ one }) => ({
+  cnrOrder: one(cnrOrders, {
+    fields: [personLeads.cnrOrderId],
+    references: [cnrOrders.id],
+  }),
+}));
+
 export const insertDistrictSchema = createInsertSchema(districts).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertCnrSchema = createInsertSchema(cnrs).omit({ id: true, uuid: true, createdAt: true });
 export const insertCnrOrderSchema = createInsertSchema(cnrOrders).omit({ id: true, uuid: true, createdAt: true });
@@ -232,6 +264,7 @@ export const insertBusinessEntitySchema = createInsertSchema(businessEntities).o
 export const insertEntityContactSchema = createInsertSchema(entityContacts).omit({ id: true, createdAt: true });
 export const insertCaseEntityLinkSchema = createInsertSchema(caseEntityLinks).omit({ id: true, createdAt: true });
 export const insertProcessingJobSchema = createInsertSchema(processingJobs).omit({ id: true, uuid: true, createdAt: true });
+export const insertPersonLeadSchema = createInsertSchema(personLeads).omit({ id: true, uuid: true, createdAt: true });
 
 export type InsertDistrict = z.infer<typeof insertDistrictSchema>;
 export type InsertCnr = z.infer<typeof insertCnrSchema>;
@@ -242,6 +275,7 @@ export type InsertBusinessEntity = z.infer<typeof insertBusinessEntitySchema>;
 export type InsertEntityContact = z.infer<typeof insertEntityContactSchema>;
 export type InsertCaseEntityLink = z.infer<typeof insertCaseEntityLinkSchema>;
 export type InsertProcessingJob = z.infer<typeof insertProcessingJobSchema>;
+export type InsertPersonLead = z.infer<typeof insertPersonLeadSchema>;
 
 export type District = typeof districts.$inferSelect;
 export type Cnr = typeof cnrs.$inferSelect;
@@ -252,6 +286,7 @@ export type BusinessEntity = typeof businessEntities.$inferSelect;
 export type EntityContact = typeof entityContacts.$inferSelect;
 export type CaseEntityLink = typeof caseEntityLinks.$inferSelect;
 export type ProcessingJob = typeof processingJobs.$inferSelect;
+export type PersonLead = typeof personLeads.$inferSelect;
 
 export const cnrGenerationRequestSchema = z.object({
   districtId: z.number().int().positive(),

@@ -10,6 +10,7 @@ import {
   entityContacts,
   caseEntityLinks,
   processingJobs,
+  personLeads,
   type District,
   type Cnr,
   type CnrOrder,
@@ -19,6 +20,7 @@ import {
   type EntityContact,
   type CaseEntityLink,
   type ProcessingJob,
+  type PersonLead,
   type InsertDistrict,
   type InsertCnr,
   type InsertCnrOrder,
@@ -28,6 +30,7 @@ import {
   type InsertEntityContact,
   type InsertCaseEntityLink,
   type InsertProcessingJob,
+  type InsertPersonLead,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -120,6 +123,10 @@ export interface IStorage {
     dataSource: string;
     enrichmentStatus: string;
   }>): Promise<void>;
+  
+  getPersonLeads(limit?: number): Promise<(PersonLead & { cnrOrder?: CnrOrder & { cnr?: Cnr } })[]>;
+  createPersonLead(data: InsertPersonLead): Promise<PersonLead>;
+  getPersonLeadsByOrderId(orderId: number): Promise<PersonLead[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -610,6 +617,39 @@ export class DatabaseStorage implements IStorage {
       failedJobs: Number(failedJobsResult?.count) || 0,
       runningJobs: Number(runningJobsResult?.count) || 0,
     };
+  }
+
+  async getPersonLeads(limit = 100): Promise<(PersonLead & { cnrOrder?: CnrOrder & { cnr?: Cnr } })[]> {
+    const results = await db
+      .select({
+        personLead: personLeads,
+        cnrOrder: cnrOrders,
+        cnr: cnrs,
+      })
+      .from(personLeads)
+      .leftJoin(cnrOrders, eq(personLeads.cnrOrderId, cnrOrders.id))
+      .leftJoin(cnrs, eq(cnrOrders.cnrId, cnrs.id))
+      .orderBy(desc(personLeads.createdAt))
+      .limit(limit);
+
+    return results.map((r) => ({
+      ...r.personLead,
+      cnrOrder: r.cnrOrder
+        ? {
+            ...r.cnrOrder,
+            cnr: r.cnr || undefined,
+          }
+        : undefined,
+    }));
+  }
+
+  async createPersonLead(data: InsertPersonLead): Promise<PersonLead> {
+    const [personLead] = await db.insert(personLeads).values(data).returning();
+    return personLead;
+  }
+
+  async getPersonLeadsByOrderId(orderId: number): Promise<PersonLead[]> {
+    return db.select().from(personLeads).where(eq(personLeads.cnrOrderId, orderId));
   }
 }
 
