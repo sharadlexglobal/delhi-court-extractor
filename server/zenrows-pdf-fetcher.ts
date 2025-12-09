@@ -46,9 +46,10 @@ async function fetchSinglePdfWithZenRows(
         url: order.url,
         apikey: apiKey,
         premium_proxy: 'true',
+        js_render: 'true',
       },
       responseType: 'arraybuffer',
-      timeout: 60000,
+      timeout: 90000,
     });
 
     const httpStatus = response.status;
@@ -187,9 +188,10 @@ export async function testZenRowsPdfFetch(url: string): Promise<{
         url: url,
         apikey: apiKey,
         premium_proxy: 'true',
+        js_render: 'true',
       },
       responseType: 'arraybuffer',
-      timeout: 60000,
+      timeout: 90000,
     });
 
     const buffer = Buffer.from(response.data);
