@@ -175,6 +175,20 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/orders/:id/text", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const pdfText = await storage.getPdfTextByOrderId(id);
+      if (!pdfText) {
+        return res.status(404).json({ error: "Extracted text not found" });
+      }
+      res.json(pdfText);
+    } catch (error) {
+      console.error("Error fetching extracted text:", error);
+      res.status(500).json({ error: "Failed to fetch extracted text" });
+    }
+  });
+
   app.get("/api/leads", async (req, res) => {
     try {
       const limit = parseInt(req.query.limit as string) || 100;
