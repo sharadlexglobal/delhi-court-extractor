@@ -373,8 +373,9 @@ export default function DirectCnr() {
                               </div>
                             </div>
                           </FormControl>
-                          <FormDescription>
-                            Format: DL + District + 01 + Serial(6) + Year(4)
+                          <FormDescription className="text-xs space-y-1">
+                            <div>Format: DL + District(2) + Est(00-10) + Serial(6) + Year(4)</div>
+                            <div className="text-muted-foreground/70">Districts: CT, ET, ND, NT, NE, NW, SH, ST, SE, SW, WT | Years: 2010-2026</div>
                           </FormDescription>
                           {cnrValidation?.valid && cnrValidation.data && (
                             <div className="text-xs text-muted-foreground mt-1">
