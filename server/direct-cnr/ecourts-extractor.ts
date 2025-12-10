@@ -193,17 +193,34 @@ async function parseECourtsPage(page: Page, cnr: string): Promise<CaseDetails> {
     let petitionerAdvocate: string | null = null;
     let respondentName: string | null = null;
     let respondentAdvocate: string | null = null;
+    const debugInfo: string[] = [];
 
     const tables = Array.from(document.querySelectorAll('table'));
+    debugInfo.push(`Total tables on page: ${tables.length}`);
+    
+    for (let i = 0; i < tables.length; i++) {
+      const table = tables[i];
+      const text = (table.textContent || '').substring(0, 200);
+      debugInfo.push(`Table ${i}: "${text.replace(/\s+/g, ' ').substring(0, 80)}..."`);
+    }
+    
+    const bodyText = document.body?.textContent || '';
+    const hasPetitioner = bodyText.includes('Petitioner');
+    const hasRespondent = bodyText.includes('Respondent');
+    debugInfo.push(`Body has Petitioner: ${hasPetitioner}, Respondent: ${hasRespondent}`);
+    
     for (const table of tables) {
       const text = table.textContent || '';
       if (text.includes('Petitioner') || text.includes('Respondent')) {
+        debugInfo.push(`Found party table with ${table.querySelectorAll('tr').length} rows`);
         const rows = Array.from(table.querySelectorAll('tr'));
-        rows.forEach((row: HTMLTableRowElement) => {
+        rows.forEach((row: HTMLTableRowElement, rowIndex: number) => {
           const cells = row.querySelectorAll('td');
+          const ths = row.querySelectorAll('th');
           if (cells.length >= 2) {
             const label = cells[0]?.textContent?.trim().toLowerCase() || '';
             const value = cells[1]?.textContent?.trim() || '';
+            debugInfo.push(`Row ${rowIndex}: label="${label.substring(0, 50)}", value="${value.substring(0, 50)}"`);
             if (label.includes('petitioner') && !label.includes('advocate')) {
               petitionerName = value;
             } else if (label.includes('petitioner') && label.includes('advocate')) {
@@ -213,16 +230,31 @@ async function parseECourtsPage(page: Page, cnr: string): Promise<CaseDetails> {
             } else if (label.includes('respondent') && label.includes('advocate')) {
               respondentAdvocate = value;
             }
+          } else if (ths.length >= 1) {
+            const thText = ths[0]?.textContent?.trim() || '';
+            const tdText = cells[0]?.textContent?.trim() || '';
+            debugInfo.push(`Row ${rowIndex} (th/td): th="${thText.substring(0, 30)}", td="${tdText.substring(0, 50)}"`);
+            if (thText.toLowerCase().includes('petitioner') && !thText.toLowerCase().includes('advocate')) {
+              petitionerName = tdText;
+            } else if (thText.toLowerCase().includes('petitioner') && thText.toLowerCase().includes('advocate')) {
+              petitionerAdvocate = tdText;
+            } else if (thText.toLowerCase().includes('respondent') && !thText.toLowerCase().includes('advocate')) {
+              respondentName = tdText;
+            } else if (thText.toLowerCase().includes('respondent') && thText.toLowerCase().includes('advocate')) {
+              respondentAdvocate = tdText;
+            }
           }
         });
       }
     }
-
     return {
       petitioner: { name: petitionerName, advocate: petitionerAdvocate },
-      respondent: { name: respondentName, advocate: respondentAdvocate }
+      respondent: { name: respondentName, advocate: respondentAdvocate },
+      debug: debugInfo
     };
   });
+  
+  console.log(`[eCourts-Party] Debug: ${(parties as any).debug?.join(' | ') || 'No debug info'}`);
 
   console.log(`[eCourts] Extracted case data keys: ${Object.keys(caseData).slice(0, 10).join(', ')}`);
   
