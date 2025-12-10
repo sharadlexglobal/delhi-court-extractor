@@ -142,3 +142,38 @@ The build script bundles these dependencies to reduce cold start times:
 **Job Management:**
 - Clear/Cancel button to reset job tracking
 - Auto-poll job status every 2 seconds
+
+### Enhanced Classification System (Dec 10, 2025)
+
+**New Fields Added to `order_metadata`:**
+- `statutory_act_name`: Full statutory act name with abbreviation (e.g., "MACT - Motor Accident Claims Tribunal under Motor Vehicles Act, 1988")
+- `case_category`: Category code (MACT, NI_ACT, IPC, CPC, CrPC, POCSO, NDPS, DV_ACT, ARBITRATION, EXECUTION, MAINTENANCE, OTHER)
+- `fresh_case_phrase`: Exact phrase that triggered fresh case detection
+
+**Delhi Courts Abbreviations Reference (in classifier prompt):**
+| Abbreviation | Full Name |
+|--------------|-----------|
+| MACT | Motor Accident Claims Tribunal (Motor Vehicles Act, 1988) |
+| NI Act | Negotiable Instruments Act, 1881 (Section 138 - Cheque Bounce) |
+| IPC | Indian Penal Code, 1860 |
+| CPC | Code of Civil Procedure, 1908 |
+| CrPC | Code of Criminal Procedure, 1973 |
+| POCSO | Protection of Children from Sexual Offences Act, 2012 |
+| NDPS | Narcotic Drugs and Psychotropic Substances Act, 1985 |
+| SC/ST Act | Scheduled Castes and Scheduled Tribes (Prevention of Atrocities) Act, 1989 |
+| DV Act | Protection of Women from Domestic Violence Act, 2005 |
+
+**Classification Output Now Includes:**
+- Case title (petitioner vs respondent)
+- Statutory act with full name and abbreviation
+- Order summary explaining what happened
+- Fresh case detection with exact phrase
+- Court and judge details
+- Next hearing date
+- Order flags (Summons, Notice, Fresh Case, Final Order, Business Entity)
+
+**Verified Test (Dec 10, 2025):**
+- Order 183055 (MACT-01, West/THC/Delhi)
+- statutoryActName: "MACT - Motor Accident Claims Tribunal under Motor Vehicles Act, 1988"
+- caseCategory: "MACT"
+- freshCasePhrase: "FAR received. It be checked and registered"
