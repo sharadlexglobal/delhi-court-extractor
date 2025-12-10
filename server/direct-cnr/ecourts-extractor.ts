@@ -1,0 +1,326 @@
+import { chromium, Page } from 'playwright';
+import OpenAI from 'openai';
+
+const ECOURTS_URL = "https://services.ecourts.gov.in/ecourtindia_v6/";
+const CNR_INPUT_FIELD_ID = "#cino";
+const CAPTCHA_INPUT_FIELD_ID = "#fcaptcha_code";
+const SEARCH_BUTTON_ID = "#searchbtn";
+const CAPTCHA_IMAGE_PATTERN = 'img[src*="securimage"]';
+const MAX_RETRIES = 3;
+
+let openaiClient: OpenAI | null = null;
+
+function getOpenAI(): OpenAI {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is not configured");
+  }
+  if (!openaiClient) {
+    openaiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      timeout: 30000,
+    });
+  }
+  return openaiClient;
+}
+
+export interface CaseDetails {
+  status: 'success' | 'error';
+  cnr: string;
+  extractionDate: string;
+  error?: string;
+  caseDetails: {
+    court: string | null;
+    caseType: string | null;
+    filingNumber: string | null;
+    filingDate: string | null;
+    registrationNumber: string | null;
+    registrationDate: string | null;
+  };
+  caseStatus: {
+    firstHearingDate: string | null;
+    nextHearingDate: string | null;
+    caseStage: string | null;
+    courtNumberAndJudge: string | null;
+  };
+  parties: {
+    petitioner: { name: string | null; advocate: string | null };
+    respondent: { name: string | null; advocate: string | null };
+  };
+  caseHistory: Array<{
+    judge: string;
+    businessOnDate: string;
+    hearingDate: string;
+    purposeOfHearing: string;
+  }>;
+  interimOrders: Array<{
+    orderNumber: number;
+    orderDate: string;
+    orderDetails: string | null;
+  }>;
+}
+
+async function solveCaptcha(captchaImageBytes: Buffer): Promise<string> {
+  const openai = getOpenAI();
+  const base64Image = captchaImageBytes.toString('base64');
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: "Read this CAPTCHA image and return ONLY the 6 characters. No explanation, no spaces, just the 6 characters. Characters are lowercase letters (a-z) and digits (0-9)."
+        },
+        {
+          type: "image_url",
+          image_url: {
+            url: `data:image/png;base64,${base64Image}`
+          }
+        }
+      ]
+    }],
+    max_tokens: 20
+  });
+
+  const solution = response.choices[0].message.content?.trim() || '';
+
+  if (!/^[a-z0-9]{6}$/i.test(solution)) {
+    throw new Error(`Invalid CAPTCHA solution format: ${solution}`);
+  }
+
+  return solution.toLowerCase();
+}
+
+async function parseECourtsPage(page: Page, cnr: string): Promise<CaseDetails> {
+  const html = await page.content();
+
+  const extractField = (patterns: RegExp[]): string | null => {
+    for (const pattern of patterns) {
+      const match = html.match(pattern);
+      if (match && match[1]) {
+        return match[1].trim();
+      }
+    }
+    return null;
+  };
+
+  const caseHistory = await page.evaluate(() => {
+    const rows: Array<{judge: string; businessOnDate: string; hearingDate: string; purposeOfHearing: string}> = [];
+    const tables = Array.from(document.querySelectorAll('table'));
+    for (const table of tables) {
+      const headers = Array.from(table.querySelectorAll('th'));
+      let isHistoryTable = false;
+      headers.forEach((h: HTMLTableCellElement) => {
+        if (h.textContent?.includes('Business on Date') || h.textContent?.includes('Hearing Date')) {
+          isHistoryTable = true;
+        }
+      });
+      if (isHistoryTable) {
+        const trs = Array.from(table.querySelectorAll('tbody tr'));
+        trs.forEach((tr: Element) => {
+          const tds = tr.querySelectorAll('td');
+          if (tds.length >= 4) {
+            rows.push({
+              judge: tds[0]?.textContent?.trim() || '',
+              businessOnDate: tds[1]?.textContent?.trim() || '',
+              hearingDate: tds[2]?.textContent?.trim() || '',
+              purposeOfHearing: tds[3]?.textContent?.trim() || ''
+            });
+          }
+        });
+        break;
+      }
+    }
+    return rows;
+  });
+
+  const interimOrders = await page.evaluate(() => {
+    const orders: Array<{orderNumber: number; orderDate: string; orderDetails: string | null}> = [];
+    const tables = Array.from(document.querySelectorAll('table'));
+    for (const table of tables) {
+      const headers = Array.from(table.querySelectorAll('th'));
+      let isOrderTable = false;
+      headers.forEach((h: HTMLTableCellElement) => {
+        if (h.textContent?.includes('Order Number') || h.textContent?.includes('Order Date')) {
+          isOrderTable = true;
+        }
+      });
+      if (isOrderTable) {
+        const trs = Array.from(table.querySelectorAll('tbody tr'));
+        trs.forEach((tr: Element, index: number) => {
+          const tds = tr.querySelectorAll('td');
+          if (tds.length >= 2) {
+            const orderNoText = tds[0]?.textContent?.trim() || '';
+            const orderNo = parseInt(orderNoText) || (index + 1);
+            const orderDate = tds[1]?.textContent?.trim() || '';
+            const orderDetails = tds.length >= 3 ? tds[2]?.textContent?.trim() || null : null;
+            if (orderDate) {
+              orders.push({
+                orderNumber: orderNo,
+                orderDate,
+                orderDetails
+              });
+            }
+          }
+        });
+        break;
+      }
+    }
+    return orders;
+  });
+
+  const parties = await page.evaluate(() => {
+    let petitionerName: string | null = null;
+    let petitionerAdvocate: string | null = null;
+    let respondentName: string | null = null;
+    let respondentAdvocate: string | null = null;
+
+    const tables = Array.from(document.querySelectorAll('table'));
+    for (const table of tables) {
+      const text = table.textContent || '';
+      if (text.includes('Petitioner') || text.includes('Respondent')) {
+        const rows = Array.from(table.querySelectorAll('tr'));
+        rows.forEach((row: HTMLTableRowElement) => {
+          const cells = row.querySelectorAll('td');
+          if (cells.length >= 2) {
+            const label = cells[0]?.textContent?.trim().toLowerCase() || '';
+            const value = cells[1]?.textContent?.trim() || '';
+            if (label.includes('petitioner') && !label.includes('advocate')) {
+              petitionerName = value;
+            } else if (label.includes('petitioner') && label.includes('advocate')) {
+              petitionerAdvocate = value;
+            } else if (label.includes('respondent') && !label.includes('advocate')) {
+              respondentName = value;
+            } else if (label.includes('respondent') && label.includes('advocate')) {
+              respondentAdvocate = value;
+            }
+          }
+        });
+      }
+    }
+
+    return {
+      petitioner: { name: petitionerName, advocate: petitionerAdvocate },
+      respondent: { name: respondentName, advocate: respondentAdvocate }
+    };
+  });
+
+  return {
+    status: 'success',
+    cnr,
+    extractionDate: new Date().toISOString(),
+    caseDetails: {
+      court: extractField([/Court[:\s]*([^\n<]+)/i]),
+      caseType: extractField([/Case Type[:\s]*([^\n<]+)/i, /Type[:\s]*([^\n<]+)/i]),
+      filingNumber: extractField([/Filing Number[:\s]*([^\n<]+)/i]),
+      filingDate: extractField([/Filing Date[:\s]*([^\n<]+)/i]),
+      registrationNumber: extractField([/Registration Number[:\s]*([^\n<]+)/i, /Reg\. Number[:\s]*([^\n<]+)/i]),
+      registrationDate: extractField([/Registration Date[:\s]*([^\n<]+)/i, /Reg\. Date[:\s]*([^\n<]+)/i]),
+    },
+    caseStatus: {
+      firstHearingDate: extractField([/First Hearing Date[:\s]*([^\n<]+)/i]),
+      nextHearingDate: extractField([/Next Hearing Date[:\s]*([^\n<]+)/i]),
+      caseStage: extractField([/Case Stage[:\s]*([^\n<]+)/i, /Stage[:\s]*([^\n<]+)/i]),
+      courtNumberAndJudge: extractField([/Court Number and Judge[:\s]*([^\n<]+)/i, /Judge[:\s]*([^\n<]+)/i]),
+    },
+    parties,
+    caseHistory,
+    interimOrders
+  };
+}
+
+export async function extractCaseDetails(cnr: string): Promise<CaseDetails> {
+  console.log(`[eCourts] Starting extraction for CNR: ${cnr}`);
+  
+  const browser = await chromium.launch({ 
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
+  const page = await browser.newPage();
+
+  try {
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        console.log(`[eCourts] Attempt ${attempt + 1}/${MAX_RETRIES}`);
+        
+        await page.goto(ECOURTS_URL, { timeout: 30000, waitUntil: 'networkidle' });
+        await page.waitForSelector(CNR_INPUT_FIELD_ID, { timeout: 10000 });
+
+        await page.fill(CNR_INPUT_FIELD_ID, cnr);
+
+        const captchaImage = page.locator(CAPTCHA_IMAGE_PATTERN).first();
+        await captchaImage.waitFor({ state: 'visible', timeout: 10000 });
+        const captchaBytes = await captchaImage.screenshot();
+        
+        console.log(`[eCourts] Solving CAPTCHA...`);
+        const captchaSolution = await solveCaptcha(captchaBytes);
+        console.log(`[eCourts] CAPTCHA solution: ${captchaSolution}`);
+
+        await page.fill(CAPTCHA_INPUT_FIELD_ID, captchaSolution);
+        await page.click(SEARCH_BUTTON_ID);
+        await page.waitForTimeout(5000);
+
+        const html = await page.content();
+
+        if (html.toLowerCase().includes('invalid captcha')) {
+          console.log(`[eCourts] CAPTCHA failed, retrying...`);
+          continue;
+        }
+
+        if (html.toLowerCase().includes('no record found')) {
+          console.log(`[eCourts] No record found for CNR: ${cnr}`);
+          return {
+            status: 'error',
+            cnr,
+            extractionDate: new Date().toISOString(),
+            error: 'No record found for this CNR',
+            caseDetails: { court: null, caseType: null, filingNumber: null, filingDate: null, registrationNumber: null, registrationDate: null },
+            caseStatus: { firstHearingDate: null, nextHearingDate: null, caseStage: null, courtNumberAndJudge: null },
+            parties: { petitioner: { name: null, advocate: null }, respondent: { name: null, advocate: null } },
+            caseHistory: [],
+            interimOrders: []
+          };
+        }
+
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await page.waitForTimeout(2000);
+
+        const caseDetails = await parseECourtsPage(page, cnr);
+        console.log(`[eCourts] Successfully extracted case details for CNR: ${cnr}`);
+        console.log(`[eCourts] Found ${caseDetails.interimOrders.length} interim orders`);
+        
+        return caseDetails;
+
+      } catch (error) {
+        console.error(`[eCourts] Attempt ${attempt + 1} failed:`, error);
+        if (attempt === MAX_RETRIES - 1) throw error;
+      }
+    }
+
+    throw new Error('All extraction attempts failed');
+
+  } finally {
+    await browser.close();
+  }
+}
+
+export function parseOrderDate(dateStr: string): Date | null {
+  const formats = [
+    /(\d{2})-(\d{2})-(\d{4})/,
+    /(\d{2})\/(\d{2})\/(\d{4})/,
+    /(\d{4})-(\d{2})-(\d{2})/,
+  ];
+
+  for (const format of formats) {
+    const match = dateStr.match(format);
+    if (match) {
+      if (format === formats[2]) {
+        return new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]));
+      } else {
+        return new Date(parseInt(match[3]), parseInt(match[2]) - 1, parseInt(match[1]));
+      }
+    }
+  }
+  return null;
+}

@@ -10,11 +10,14 @@ import { classifyOrdersForJob } from "./classifier.js";
 import { enrichEntitiesForJob } from "./entity-enrichment.js";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { seedDistricts } from "./seed";
+import { directCnrRouter } from "./direct-cnr";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  app.use("/api/direct-cnr", directCnrRouter);
 
   app.get("/objects/:objectPath(*)", async (req, res) => {
     const objectStorageService = new ObjectStorageService();
