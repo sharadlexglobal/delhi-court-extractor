@@ -987,5 +987,129 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/reports/case-categories", async (_req, res) => {
+    try {
+      const stats = await storage.getCaseCategoryStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching case category stats:", error);
+      res.status(500).json({ error: "Failed to fetch case category stats" });
+    }
+  });
+
+  app.get("/api/reports/cases-by-category", async (req, res) => {
+    try {
+      const { categories, limit } = req.query;
+      
+      if (!categories) {
+        return res.status(400).json({ error: "categories parameter is required (comma-separated)" });
+      }
+      
+      const categoryList = (categories as string).split(",").map(c => c.trim().toUpperCase());
+      const limitNum = Math.min(parseInt(limit as string) || 500, 1000);
+      
+      const orders = await storage.getOrdersByCategory(categoryList, limitNum);
+      res.json(orders);
+    } catch (error) {
+      console.error("Error fetching cases by category:", error);
+      res.status(500).json({ error: "Failed to fetch cases by category" });
+    }
+  });
+
+  app.get("/api/reports/export-cases", async (req, res) => {
+    try {
+      const { categories, format } = req.query;
+      
+      if (!categories) {
+        return res.status(400).json({ error: "categories parameter is required (comma-separated)" });
+      }
+      
+      const categoryList = (categories as string).split(",").map(c => c.trim().toUpperCase());
+      const orders = await storage.getOrdersByCategory(categoryList, 1000);
+      
+      if (orders.length === 0) {
+        return res.status(404).json({ error: "No cases found for the specified categories" });
+      }
+      
+      const rows = orders.map(order => ({
+        "CNR Number": order.cnr?.cnr || "",
+        "District": order.cnr?.district?.name || "",
+        "Case Category": order.metadata?.caseCategory || "",
+        "Case Title": order.metadata?.caseTitle || "",
+        "Case Number": order.metadata?.caseNumber || "",
+        "Case Type": order.metadata?.caseType || "",
+        "Statutory Act": order.metadata?.statutoryActName || "",
+        "Petitioner Names": order.metadata?.petitionerNames || "",
+        "Respondent Names": order.metadata?.respondentNames || "",
+        "Petitioner Advocates": order.metadata?.petitionerAdvocates || "",
+        "Respondent Advocates": order.metadata?.respondentAdvocates || "",
+        "Judge Name": order.metadata?.judgeName || "",
+        "Court Name": order.metadata?.courtName || "",
+        "Order Date": order.orderDate,
+        "Order Type": order.metadata?.orderType || "",
+        "Order Summary": order.metadata?.orderSummary || "",
+        "Next Hearing Date": order.metadata?.nextHearingDate || "",
+        "Fresh Case": order.metadata?.isFreshCaseAssignment ? "Yes" : "No",
+        "Fresh Case Phrase": order.metadata?.freshCasePhrase || "",
+        "Summons Order": order.metadata?.isSummonsOrder ? "Yes" : "No",
+        "Notice Order": order.metadata?.isNoticeOrder ? "Yes" : "No",
+        "Final Order": order.metadata?.isFinalOrder ? "Yes" : "No",
+        "Has Business Entity": order.metadata?.hasBusinessEntity ? "Yes" : "No",
+        "Confidence": order.metadata?.classificationConfidence || "",
+        "Classified At": order.metadata?.classifiedAt || "",
+      }));
+      
+      if (format === "json") {
+        res.json(rows);
+      } else {
+        const xlsx = await import("xlsx");
+        const worksheet = xlsx.utils.json_to_sheet(rows);
+        const workbook = xlsx.utils.book_new();
+        xlsx.utils.book_append_sheet(workbook, worksheet, "Cases");
+        
+        const columnWidths = [
+          { wch: 20 }, // CNR Number
+          { wch: 15 }, // District
+          { wch: 15 }, // Case Category
+          { wch: 40 }, // Case Title
+          { wch: 20 }, // Case Number
+          { wch: 15 }, // Case Type
+          { wch: 50 }, // Statutory Act
+          { wch: 30 }, // Petitioner Names
+          { wch: 30 }, // Respondent Names
+          { wch: 30 }, // Petitioner Advocates
+          { wch: 30 }, // Respondent Advocates
+          { wch: 20 }, // Judge Name
+          { wch: 25 }, // Court Name
+          { wch: 12 }, // Order Date
+          { wch: 15 }, // Order Type
+          { wch: 60 }, // Order Summary
+          { wch: 15 }, // Next Hearing Date
+          { wch: 10 }, // Fresh Case
+          { wch: 40 }, // Fresh Case Phrase
+          { wch: 12 }, // Summons Order
+          { wch: 12 }, // Notice Order
+          { wch: 12 }, // Final Order
+          { wch: 15 }, // Has Business Entity
+          { wch: 10 }, // Confidence
+          { wch: 20 }, // Classified At
+        ];
+        worksheet['!cols'] = columnWidths;
+        
+        const buffer = xlsx.write(workbook, { type: "buffer", bookType: "xlsx" });
+        
+        const categoryName = categoryList.join("_");
+        const filename = `${categoryName}_cases_${new Date().toISOString().split("T")[0]}.xlsx`;
+        
+        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+        res.send(buffer);
+      }
+    } catch (error) {
+      console.error("Error exporting cases:", error);
+      res.status(500).json({ error: "Failed to export cases" });
+    }
+  });
+
   return httpServer;
 }

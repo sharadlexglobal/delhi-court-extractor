@@ -705,6 +705,51 @@ export class DatabaseStorage implements IStorage {
   async getPersonLeadsByOrderId(orderId: number): Promise<PersonLead[]> {
     return db.select().from(personLeads).where(eq(personLeads.cnrOrderId, orderId));
   }
+
+  async getOrdersByCategory(categories: string[], limit = 500): Promise<(CnrOrder & { cnr?: Cnr & { district?: District }; metadata?: OrderMetadata })[]> {
+    const results = await db
+      .select({
+        order: cnrOrders,
+        cnr: cnrs,
+        district: districts,
+        metadata: orderMetadata,
+      })
+      .from(cnrOrders)
+      .innerJoin(orderMetadata, eq(cnrOrders.id, orderMetadata.cnrOrderId))
+      .leftJoin(cnrs, eq(cnrOrders.cnrId, cnrs.id))
+      .leftJoin(districts, eq(cnrs.districtId, districts.id))
+      .where(inArray(orderMetadata.caseCategory, categories))
+      .orderBy(desc(orderMetadata.classifiedAt))
+      .limit(limit);
+
+    return results.map((r) => ({
+      ...r.order,
+      cnr: r.cnr
+        ? {
+            ...r.cnr,
+            district: r.district || undefined,
+          }
+        : undefined,
+      metadata: r.metadata || undefined,
+    }));
+  }
+
+  async getCaseCategoryStats(): Promise<{ category: string; count: number }[]> {
+    const results = await db
+      .select({
+        category: orderMetadata.caseCategory,
+        count: count(),
+      })
+      .from(orderMetadata)
+      .where(sql`${orderMetadata.caseCategory} IS NOT NULL`)
+      .groupBy(orderMetadata.caseCategory)
+      .orderBy(desc(count()));
+
+    return results.map((r) => ({
+      category: r.category || "OTHER",
+      count: Number(r.count) || 0,
+    }));
+  }
 }
 
 export const storage = new DatabaseStorage();

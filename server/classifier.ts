@@ -108,6 +108,7 @@ const CLASSIFICATION_PROMPT = `You are a legal document analyzer specializing in
 ## DELHI COURTS CASE TYPE ABBREVIATIONS REFERENCE:
 - MACT = Motor Accident Claims Tribunal (under Motor Vehicles Act, 1988)
 - NI Act / Section 138 = Negotiable Instruments Act, 1881 (cheque bounce cases)
+- Commercial Courts Act = Commercial Courts Act, 2015 (commercial disputes above specified value)
 - IPC = Indian Penal Code, 1860 (criminal cases)
 - CPC = Code of Civil Procedure, 1908 (civil procedure)
 - CrPC = Code of Criminal Procedure, 1973 (criminal procedure)
@@ -130,7 +131,7 @@ Return a JSON object with the following fields:
   "caseTitle": "Full case title (e.g., 'Ashok Kumar Vs. Keshav')",
   "caseNumber": "Case number (e.g., '1156/2025', 'Bail Matter No. 4276/2025')",
   "caseType": "Type of case (civil, criminal, commercial, motor_accident, cheque_bounce, family, etc.)",
-  "caseCategory": "Category from: MACT, NI_ACT, IPC, CPC, CrPC, POCSO, NDPS, DV_ACT, ARBITRATION, EXECUTION, MAINTENANCE, OTHER",
+  "caseCategory": "Category from: MACT, NI_ACT, COMMERCIAL_COURTS, IPC, CPC, CrPC, POCSO, NDPS, DV_ACT, ARBITRATION, EXECUTION, MAINTENANCE, OTHER",
   "filingDate": "Filing date in YYYY-MM-DD format if found",
   "petitionerNames": "Names of petitioners/plaintiffs separated by commas",
   "respondentNames": "Names of respondents/defendants separated by commas",
