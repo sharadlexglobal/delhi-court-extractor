@@ -24,8 +24,11 @@ import { createMonitoringSchedule, getActiveMonitoringSchedules, runDailyMonitor
 import { db } from '../db';
 import { directCnrSummaries, directCnrOrders } from '@shared/schema';
 import { eq } from 'drizzle-orm';
+import { rateLimit, heavyOperationLimit, sanitizeErrorMessage, acquireSchedulerLock, releaseSchedulerLock } from './middleware';
 
 export const directCnrRouter = Router();
+
+directCnrRouter.use(rateLimit(60));
 
 const createAdvocateSchema = z.object({
   name: z.string().min(1),
@@ -152,7 +155,7 @@ directCnrRouter.post('/cases/register', async (req: Request, res: Response) => {
   }
 });
 
-directCnrRouter.post('/cases/:id/extract', async (req: Request, res: Response) => {
+directCnrRouter.post('/cases/:id/extract', heavyOperationLimit, async (req: Request, res: Response) => {
   try {
     const caseId = parseInt(req.params.id);
     const caseRecord = await getCaseById(caseId);
@@ -212,7 +215,7 @@ directCnrRouter.post('/cases/:id/extract', async (req: Request, res: Response) =
   }
 });
 
-directCnrRouter.post('/cases/:id/process', async (req: Request, res: Response) => {
+directCnrRouter.post('/cases/:id/process', heavyOperationLimit, async (req: Request, res: Response) => {
   try {
     const caseId = parseInt(req.params.id);
     const caseRecord = await getCaseById(caseId);
@@ -302,13 +305,22 @@ directCnrRouter.get('/monitoring/active', async (req: Request, res: Response) =>
   }
 });
 
-directCnrRouter.post('/monitoring/run', async (req: Request, res: Response) => {
+directCnrRouter.post('/monitoring/run', heavyOperationLimit, async (req: Request, res: Response) => {
+  if (!acquireSchedulerLock()) {
+    return res.status(409).json({ 
+      success: false, 
+      error: 'Monitoring check already in progress. Please try again later.' 
+    });
+  }
+
   try {
     const result = await runDailyMonitoringCheck();
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('[DirectCNR-API] Error running monitoring check:', error);
-    res.status(500).json({ success: false, error: 'Failed to run monitoring check' });
+    res.status(500).json({ success: false, error: sanitizeErrorMessage(error) });
+  } finally {
+    releaseSchedulerLock();
   }
 });
 

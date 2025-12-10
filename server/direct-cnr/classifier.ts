@@ -3,6 +3,7 @@ import { db } from '../db';
 import { directCnrOrders, directCnrSummaries, directCnrPdfTexts } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 import type { DirectCnrOrder, DirectCnrSummary, InsertDirectCnrSummary } from '@shared/schema';
+import { z } from 'zod';
 
 const API_TIMEOUT_MS = 60000;
 const MAX_RETRIES = 3;
@@ -59,21 +60,23 @@ async function withRetry<T>(
   throw lastError;
 }
 
-interface DirectCnrClassificationResult {
-  caseTitle: string | null;
-  caseCategory: string | null;
-  statutoryActName: string | null;
-  orderType: string | null;
-  orderSummary: string | null;
-  operativePortion: string | null;
-  nextHearingDate: string | null;
-  isFinalOrder: boolean;
-  isSummonsOrder: boolean;
-  isNoticeOrder: boolean;
-  preparationNotes: string | null;
-  actionItems: string[];
-  classificationConfidence: number;
-}
+const classificationResultSchema = z.object({
+  caseTitle: z.string().nullable().default(null),
+  caseCategory: z.string().nullable().default(null),
+  statutoryActName: z.string().nullable().default(null),
+  orderType: z.string().nullable().default(null),
+  orderSummary: z.string().nullable().default(null),
+  operativePortion: z.string().nullable().default(null),
+  nextHearingDate: z.string().nullable().default(null),
+  isFinalOrder: z.boolean().default(false),
+  isSummonsOrder: z.boolean().default(false),
+  isNoticeOrder: z.boolean().default(false),
+  preparationNotes: z.string().nullable().default(null),
+  actionItems: z.array(z.string()).default([]),
+  classificationConfidence: z.number().min(0).max(1).default(0.5)
+});
+
+type DirectCnrClassificationResult = z.infer<typeof classificationResultSchema>;
 
 const DIRECT_CNR_CLASSIFICATION_PROMPT = `You are a legal document analyzer for Indian Advocates. Analyze this court order and provide:
 
@@ -153,8 +156,15 @@ export async function classifyDirectCnrOrder(
       return null;
     }
 
-    const result = JSON.parse(content) as DirectCnrClassificationResult;
-    return result;
+    const rawResult = JSON.parse(content);
+    const validationResult = classificationResultSchema.safeParse(rawResult);
+    
+    if (!validationResult.success) {
+      console.error(`[DirectCNR-Classifier] Invalid response format for order ${orderId}:`, validationResult.error.errors);
+      return classificationResultSchema.parse({});
+    }
+    
+    return validationResult.data;
   } catch (error) {
     console.error(`[DirectCNR-Classifier] Error classifying order ${orderId}:`, error);
     return null;
