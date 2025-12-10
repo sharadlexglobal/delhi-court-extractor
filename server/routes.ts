@@ -65,6 +65,7 @@ export async function registerRoutes(
     }
   });
 
+  // Step 1: Generate CNRs ONLY (no orders)
   app.post("/api/cnrs/generate", async (req, res) => {
     try {
       const validation = cnrGenerationRequestSchema.safeParse(req.body);
@@ -72,7 +73,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: validation.error.errors });
       }
 
-      const { districtId, startSerial, endSerial, year, daysAhead, maxOrderNo, startDate } = validation.data;
+      const { districtId, startSerial, endSerial, year } = validation.data;
 
       const district = await storage.getDistrictById(districtId);
       if (!district) {
@@ -104,6 +105,33 @@ export async function registerRoutes(
 
       const createdCnrs = await storage.createCnrsBatch(cnrsToCreate);
 
+      res.json({
+        cnrsCreated: createdCnrs.length,
+        cnrIds: createdCnrs.map(c => c.id),
+        cnrs: createdCnrs.map(c => c.cnr),
+        message: `Generated ${createdCnrs.length} CNRs`,
+      });
+    } catch (error) {
+      console.error("Error generating CNRs:", error);
+      res.status(500).json({ error: "Failed to generate CNRs" });
+    }
+  });
+
+  // Step 2: Create order URLs for specific CNRs (separate action)
+  app.post("/api/orders/generate", async (req, res) => {
+    try {
+      const { cnrIds, orderDate, orderNo } = req.body;
+      
+      if (!cnrIds || !Array.isArray(cnrIds) || cnrIds.length === 0) {
+        return res.status(400).json({ error: "cnrIds array is required" });
+      }
+      if (!orderDate) {
+        return res.status(400).json({ error: "orderDate is required" });
+      }
+      if (!orderNo || orderNo < 1) {
+        return res.status(400).json({ error: "orderNo is required (1 or higher)" });
+      }
+
       const ordersToCreate: Array<{
         cnrId: number;
         orderNo: number;
@@ -112,44 +140,40 @@ export async function registerRoutes(
         encodedPayload: string;
       }> = [];
 
-      const baseDate = startDate ? new Date(startDate) : new Date();
-      for (const cnr of createdCnrs) {
-        for (let day = 0; day < daysAhead; day++) {
-          const orderDate = new Date(baseDate);
-          orderDate.setDate(orderDate.getDate() + day);
-          const dateStr = orderDate.toISOString().split("T")[0];
+      for (const cnrId of cnrIds) {
+        const cnr = await storage.getCnrById(cnrId);
+        if (!cnr) continue;
 
-          for (let orderNo = 1; orderNo <= maxOrderNo; orderNo++) {
-            const payload = JSON.stringify({
-              cino: cnr.cnr,
-              order_no: orderNo,
-              order_date: dateStr,
-            });
-            const encodedPayload = Buffer.from(payload).toString("base64");
-            const url = `${district.baseUrl}/wp-admin/admin-ajax.php?es_ajax_request=1&action=get_order_pdf&input_strings=${encodedPayload}`;
+        const district = await storage.getDistrictById(cnr.districtId);
+        if (!district) continue;
 
-            ordersToCreate.push({
-              cnrId: cnr.id,
-              orderNo,
-              orderDate: dateStr,
-              url,
-              encodedPayload,
-            });
-          }
-        }
+        const payload = JSON.stringify({
+          cino: cnr.cnr,
+          order_no: orderNo,
+          order_date: orderDate,
+        });
+        const encodedPayload = Buffer.from(payload).toString("base64");
+        const url = `${district.baseUrl}/wp-admin/admin-ajax.php?es_ajax_request=1&action=get_order_pdf&input_strings=${encodedPayload}`;
+
+        ordersToCreate.push({
+          cnrId,
+          orderNo,
+          orderDate,
+          url,
+          encodedPayload,
+        });
       }
 
       const createdOrders = await storage.createOrdersBatch(ordersToCreate);
 
       res.json({
-        cnrsCreated: createdCnrs.length,
         ordersCreated: createdOrders.length,
         orderIds: createdOrders.map(o => o.id),
-        message: `Generated ${createdCnrs.length} CNRs with ${createdOrders.length} order combinations`,
+        message: `Created ${createdOrders.length} order URLs`,
       });
     } catch (error) {
-      console.error("Error generating CNRs:", error);
-      res.status(500).json({ error: "Failed to generate CNRs" });
+      console.error("Error generating orders:", error);
+      res.status(500).json({ error: "Failed to generate orders" });
     }
   });
 

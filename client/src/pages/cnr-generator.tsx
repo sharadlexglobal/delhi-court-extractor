@@ -24,15 +24,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { DataTable } from "@/components/data-table";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Hash, ChevronDown, Loader2, CheckCircle2, XCircle, Download, Play, FileText, Brain, Sparkles, CalendarIcon } from "lucide-react";
+import { Hash, Loader2, CheckCircle2, XCircle, Download, Play, FileText, Brain, Sparkles, CalendarIcon } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
@@ -43,12 +38,16 @@ const generateFormSchema = z.object({
   startSerial: z.coerce.number().int().positive("Must be positive"),
   endSerial: z.coerce.number().int().positive("Must be positive"),
   year: z.coerce.number().int().min(2000).max(2030),
-  daysAhead: z.coerce.number().int().min(1).max(60).default(30),
-  maxOrderNo: z.coerce.number().int().min(1).max(20).default(10),
-  startDate: z.date(),
 });
 
 type GenerateFormValues = z.infer<typeof generateFormSchema>;
+
+const orderFormSchema = z.object({
+  orderDate: z.date(),
+  orderNo: z.coerce.number().int().min(1).max(20).default(1),
+});
+
+type OrderFormValues = z.infer<typeof orderFormSchema>;
 
 interface GeneratedCnr extends Cnr {
   district?: District;
@@ -56,8 +55,8 @@ interface GeneratedCnr extends Cnr {
 }
 
 export default function CnrGenerator() {
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [activeJobId, setActiveJobId] = useState<number | null>(null);
+  const [generatedCnrIds, setGeneratedCnrIds] = useState<number[]>([]);
   const [generatedOrderIds, setGeneratedOrderIds] = useState<number[]>([]);
   const lastCompletedJobIdRef = useRef<number | null>(null);
   const { toast } = useToast();
@@ -95,11 +94,16 @@ export default function CnrGenerator() {
     defaultValues: {
       districtId: "",
       startSerial: 1,
-      endSerial: 100,
+      endSerial: 10,
       year: new Date().getFullYear(),
-      daysAhead: 30,
-      maxOrderNo: 10,
-      startDate: new Date(),
+    },
+  });
+
+  const orderForm = useForm<OrderFormValues>({
+    resolver: zodResolver(orderFormSchema),
+    defaultValues: {
+      orderDate: new Date(),
+      orderNo: 1,
     },
   });
 
@@ -110,25 +114,48 @@ export default function CnrGenerator() {
         startSerial: values.startSerial,
         endSerial: values.endSerial,
         year: values.year,
-        daysAhead: values.daysAhead,
-        maxOrderNo: values.maxOrderNo,
-        startDate: values.startDate.toISOString().split("T")[0],
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setGeneratedCnrIds(data.cnrIds || []);
+      setGeneratedOrderIds([]);
+      toast({
+        title: "CNRs Generated",
+        description: `Created ${data.cnrsCreated} CNRs: ${data.cnrs?.slice(0, 3).join(", ")}${data.cnrsCreated > 3 ? "..." : ""}`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/cnrs?limit=50"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/analytics/overview"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Generation Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const generateOrdersMutation = useMutation({
+    mutationFn: async (values: OrderFormValues) => {
+      const response = await apiRequest("POST", "/api/orders/generate", {
+        cnrIds: generatedCnrIds,
+        orderDate: values.orderDate.toISOString().split("T")[0],
+        orderNo: values.orderNo,
       });
       return response.json();
     },
     onSuccess: (data) => {
       setGeneratedOrderIds(data.orderIds || []);
       toast({
-        title: "CNRs Generated",
-        description: `Created ${data.cnrsCreated} CNRs with ${data.ordersCreated} order combinations`,
+        title: "Order URLs Created",
+        description: `Created ${data.ordersCreated} order URLs ready for download`,
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/cnrs?limit=50"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/analytics/overview"] });
       queryClient.invalidateQueries({ queryKey: ["/api/orders?limit=10"] });
     },
     onError: (error: Error) => {
       toast({
-        title: "Generation Failed",
+        title: "Order Creation Failed",
         description: error.message,
         variant: "destructive",
       });
@@ -313,6 +340,10 @@ export default function CnrGenerator() {
     generateMutation.mutate(values);
   };
 
+  const onOrderSubmit = (values: OrderFormValues) => {
+    generateOrdersMutation.mutate(values);
+  };
+
   const handleStartDownload = () => {
     startDownloadMutation.mutate();
   };
@@ -486,103 +517,6 @@ export default function CnrGenerator() {
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="startDate"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-col">
-                      <FormLabel>Start Date</FormLabel>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <FormControl>
-                            <Button
-                              variant="outline"
-                              className="w-full justify-start text-left font-normal"
-                              data-testid="button-start-date"
-                            >
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {field.value ? format(field.value, "PPP") : "Pick a date"}
-                            </Button>
-                          </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            mode="single"
-                            selected={field.value}
-                            onSelect={field.onChange}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
-                      <FormDescription>
-                        Order dates will start from this date
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-                  <CollapsibleTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full justify-between"
-                      type="button"
-                      data-testid="button-advanced-options"
-                    >
-                      Advanced Options
-                      <ChevronDown
-                        className={`h-4 w-4 transition-transform ${
-                          advancedOpen ? "rotate-180" : ""
-                        }`}
-                      />
-                    </Button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="mt-4 space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="daysAhead"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Days Ahead</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              {...field}
-                              data-testid="input-days-ahead"
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Generate order dates for the next N days
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="maxOrderNo"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Max Order Number</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              {...field}
-                              data-testid="input-max-order"
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Maximum order number per date (1-20)
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </CollapsibleContent>
-                </Collapsible>
-
                 <Button
                   type="submit"
                   className="w-full"
@@ -615,7 +549,83 @@ export default function CnrGenerator() {
 
             <div className="mt-6 border-t pt-6">
               <h3 className="mb-3 text-sm font-medium text-muted-foreground">
-                Step 2: Download PDFs
+                Step 2: Create Order URLs
+              </h3>
+              <Form {...orderForm}>
+                <form onSubmit={orderForm.handleSubmit(onOrderSubmit)} className="space-y-3">
+                  <FormField
+                    control={orderForm.control}
+                    name="orderDate"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-col">
+                        <FormLabel>Order Date</FormLabel>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button
+                                variant="outline"
+                                className="w-full justify-start text-left font-normal"
+                                data-testid="button-order-date"
+                              >
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {field.value ? format(field.value, "PPP") : "Pick a date"}
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={field.value}
+                              onSelect={field.onChange}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={orderForm.control}
+                    name="orderNo"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Order Number</FormLabel>
+                        <FormControl>
+                          <Input type="number" {...field} data-testid="input-order-no" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button
+                    type="submit"
+                    variant="secondary"
+                    className="w-full"
+                    disabled={generateOrdersMutation.isPending || generatedCnrIds.length === 0}
+                    data-testid="button-create-orders"
+                  >
+                    {generateOrdersMutation.isPending ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Creating Order URLs...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="mr-2 h-4 w-4" />
+                        {generatedCnrIds.length > 0 
+                          ? `Create URLs for ${generatedCnrIds.length} CNRs` 
+                          : "Generate CNRs First"}
+                      </>
+                    )}
+                  </Button>
+                </form>
+              </Form>
+            </div>
+
+            <div className="mt-6 border-t pt-6">
+              <h3 className="mb-3 text-sm font-medium text-muted-foreground">
+                Step 3: Download PDFs
               </h3>
               <Button
                 variant="secondary"
@@ -634,7 +644,7 @@ export default function CnrGenerator() {
                     <Download className="mr-2 h-4 w-4" />
                     {generatedOrderIds.length > 0 
                       ? `Download PDFs (${generatedOrderIds.length} orders)` 
-                      : "Generate CNRs First"}
+                      : "Create Order URLs First"}
                   </>
                 )}
               </Button>
@@ -695,7 +705,7 @@ export default function CnrGenerator() {
 
             <div className="mt-6 border-t pt-6">
               <h3 className="mb-3 text-sm font-medium text-muted-foreground">
-                Step 3: Extract Text
+                Step 4: Extract Text
               </h3>
               <Button
                 variant="secondary"
@@ -723,7 +733,7 @@ export default function CnrGenerator() {
 
             <div className="mt-6 border-t pt-6">
               <h3 className="mb-3 text-sm font-medium text-muted-foreground">
-                Step 4: Classify Orders
+                Step 5: Classify Orders
               </h3>
               <Button
                 variant="secondary"
@@ -751,7 +761,7 @@ export default function CnrGenerator() {
 
             <div className="mt-6 border-t pt-6">
               <h3 className="mb-3 text-sm font-medium text-muted-foreground">
-                Step 5: Enrich Leads
+                Step 6: Enrich Leads
               </h3>
               <Button
                 variant="secondary"
