@@ -29,7 +29,8 @@ const DISTRICT_MAPPING: Record<string, string> = {
 export function parseCNR(cnr: string): ParsedCNR | null {
   const normalizedCnr = cnr.toUpperCase().replace(/\s/g, '');
   
-  if (!/^DL[A-Z]{2}01\d{6}\d{4}$/.test(normalizedCnr)) {
+  // Allow any 2-digit establishment code (01, 02, 03, etc.) and years from 2010-2099
+  if (!/^DL[A-Z]{2}\d{2}\d{6}\d{4}$/.test(normalizedCnr)) {
     return null;
   }
 
@@ -37,6 +38,12 @@ export function parseCNR(cnr: string): ParsedCNR | null {
   const establishmentCode = normalizedCnr.substring(4, 6);
   const serialNumber = parseInt(normalizedCnr.substring(6, 12));
   const year = parseInt(normalizedCnr.substring(12, 16));
+
+  // Accept years from 2010 to current year + 1
+  const currentYear = new Date().getFullYear();
+  if (year < 2010 || year > currentYear + 1) {
+    return null;
+  }
 
   const baseUrl = DISTRICT_MAPPING[districtCode];
   if (!baseUrl) return null;
