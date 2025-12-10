@@ -43,8 +43,16 @@ const generateFormSchema = z.object({
 type GenerateFormValues = z.infer<typeof generateFormSchema>;
 
 const orderFormSchema = z.object({
-  orderDate: z.date(),
-  orderNo: z.coerce.number().int().min(1).max(20).default(1),
+  startDate: z.date(),
+  endDate: z.date(),
+  startOrderNo: z.coerce.number().int().min(1).max(20).default(1),
+  endOrderNo: z.coerce.number().int().min(1).max(20).default(1),
+}).refine((data) => data.endDate >= data.startDate, {
+  message: "End date must be after start date",
+  path: ["endDate"],
+}).refine((data) => data.endOrderNo >= data.startOrderNo, {
+  message: "End order must be >= start order",
+  path: ["endOrderNo"],
 });
 
 type OrderFormValues = z.infer<typeof orderFormSchema>;
@@ -102,8 +110,10 @@ export default function CnrGenerator() {
   const orderForm = useForm<OrderFormValues>({
     resolver: zodResolver(orderFormSchema),
     defaultValues: {
-      orderDate: new Date(),
-      orderNo: 1,
+      startDate: new Date(),
+      endDate: new Date(),
+      startOrderNo: 1,
+      endOrderNo: 1,
     },
   });
 
@@ -140,8 +150,10 @@ export default function CnrGenerator() {
     mutationFn: async (values: OrderFormValues) => {
       const response = await apiRequest("POST", "/api/orders/generate", {
         cnrIds: generatedCnrIds,
-        orderDate: values.orderDate.toISOString().split("T")[0],
-        orderNo: values.orderNo,
+        startDate: values.startDate.toISOString().split("T")[0],
+        endDate: values.endDate.toISOString().split("T")[0],
+        startOrderNo: values.startOrderNo,
+        endOrderNo: values.endOrderNo,
       });
       return response.json();
     },
@@ -551,53 +563,117 @@ export default function CnrGenerator() {
               <h3 className="mb-3 text-sm font-medium text-muted-foreground">
                 Step 2: Create Order URLs
               </h3>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Select date range and order numbers to search. Max: 30 days, 10 orders.
+              </p>
               <Form {...orderForm}>
                 <form onSubmit={orderForm.handleSubmit(onOrderSubmit)} className="space-y-3">
-                  <FormField
-                    control={orderForm.control}
-                    name="orderDate"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-col">
-                        <FormLabel>Order Date</FormLabel>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <FormControl>
-                              <Button
-                                variant="outline"
-                                className="w-full justify-start text-left font-normal"
-                                data-testid="button-order-date"
-                              >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {field.value ? format(field.value, "PPP") : "Pick a date"}
-                              </Button>
-                            </FormControl>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0" align="start">
-                            <Calendar
-                              mode="single"
-                              selected={field.value}
-                              onSelect={field.onChange}
-                              initialFocus
+                  <div className="grid grid-cols-2 gap-2">
+                    <FormField
+                      control={orderForm.control}
+                      name="startDate"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-col">
+                          <FormLabel>From Date</FormLabel>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <FormControl>
+                                <Button
+                                  variant="outline"
+                                  className="w-full justify-start text-left font-normal text-xs px-2"
+                                  data-testid="button-start-date"
+                                >
+                                  <CalendarIcon className="mr-1 h-3 w-3" />
+                                  {field.value ? format(field.value, "dd/MM/yy") : "Start"}
+                                </Button>
+                              </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <Calendar
+                                mode="single"
+                                selected={field.value}
+                                onSelect={field.onChange}
+                                initialFocus
+                              />
+                            </PopoverContent>
+                          </Popover>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={orderForm.control}
+                      name="endDate"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-col">
+                          <FormLabel>To Date</FormLabel>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <FormControl>
+                                <Button
+                                  variant="outline"
+                                  className="w-full justify-start text-left font-normal text-xs px-2"
+                                  data-testid="button-end-date"
+                                >
+                                  <CalendarIcon className="mr-1 h-3 w-3" />
+                                  {field.value ? format(field.value, "dd/MM/yy") : "End"}
+                                </Button>
+                              </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <Calendar
+                                mode="single"
+                                selected={field.value}
+                                onSelect={field.onChange}
+                                initialFocus
+                              />
+                            </PopoverContent>
+                          </Popover>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <FormField
+                      control={orderForm.control}
+                      name="startOrderNo"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>From Order #</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="number" 
+                              {...field} 
+                              value={field.value}
+                              onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
+                              data-testid="input-start-order-no" 
                             />
-                          </PopoverContent>
-                        </Popover>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={orderForm.control}
-                    name="orderNo"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Order Number</FormLabel>
-                        <FormControl>
-                          <Input type="number" {...field} data-testid="input-order-no" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={orderForm.control}
+                      name="endOrderNo"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>To Order #</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="number" 
+                              {...field} 
+                              value={field.value}
+                              onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
+                              data-testid="input-end-order-no" 
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                   <Button
                     type="submit"
                     variant="secondary"
@@ -672,6 +748,23 @@ export default function CnrGenerator() {
                       Failed: {activeJob.failedItems}
                     </span>
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full mt-2"
+                    onClick={() => {
+                      lastCompletedJobIdRef.current = activeJobId;
+                      setActiveJobId(null);
+                      toast({
+                        title: "Job Cleared",
+                        description: "You can now start a new job",
+                      });
+                    }}
+                    data-testid="button-clear-job"
+                  >
+                    <XCircle className="mr-2 h-3 w-3" />
+                    Clear / Cancel Tracking
+                  </Button>
                 </div>
               )}
 

@@ -120,3 +120,25 @@ The build script bundles these dependencies to reduce cold start times:
 - Classification: ✓ Criminal case, 95% confidence
 
 **Previous Domain Bug Fixed**: DLWT codes were incorrectly mapped to southwestdelhi domain, causing 422 errors. Now correctly mapped to westdelhi.dcourts.gov.in.
+
+### User Control Enhancements (Dec 10, 2025)
+
+**CNR Generation:**
+- Serial range: User specifies From/To (max 100 per request)
+- Bulk duplicate checking using getCnrsByStrings()
+
+**Order URL Generation:**
+- Date range: User selects From/To dates (max 30 days)
+- Order range: User selects From/To order numbers (max 10)
+- Total calculation: CNRs × Days × Orders (max 1000 per request)
+- Bulk CNR+District fetch using getCnrsByIdsWithDistricts()
+
+**Server-side Limits:**
+- MAX_CNRS_PER_REQUEST = 100
+- MAX_DAYS_RANGE = 30
+- MAX_ORDER_RANGE = 10
+- MAX_ORDERS_PER_REQUEST = 1000
+
+**Job Management:**
+- Clear/Cancel button to reset job tracking
+- Auto-poll job status every 2 seconds

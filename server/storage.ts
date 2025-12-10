@@ -41,6 +41,8 @@ export interface IStorage {
   getCnrs(limit?: number): Promise<(Cnr & { district?: District; ordersCount?: number })[]>;
   getCnrById(id: number): Promise<Cnr | undefined>;
   getCnrByCnr(cnr: string): Promise<Cnr | undefined>;
+  getCnrsByStrings(cnrStrings: string[]): Promise<Cnr[]>;
+  getCnrsByIdsWithDistricts(ids: number[]): Promise<(Cnr & { district?: District })[]>;
   createCnr(data: InsertCnr): Promise<Cnr>;
   createCnrsBatch(data: InsertCnr[]): Promise<Cnr[]>;
   
@@ -172,6 +174,28 @@ export class DatabaseStorage implements IStorage {
   async getCnrByCnr(cnr: string): Promise<Cnr | undefined> {
     const [result] = await db.select().from(cnrs).where(eq(cnrs.cnr, cnr));
     return result;
+  }
+
+  async getCnrsByStrings(cnrStrings: string[]): Promise<Cnr[]> {
+    if (cnrStrings.length === 0) return [];
+    return db.select().from(cnrs).where(inArray(cnrs.cnr, cnrStrings));
+  }
+
+  async getCnrsByIdsWithDistricts(ids: number[]): Promise<(Cnr & { district?: District })[]> {
+    if (ids.length === 0) return [];
+    const results = await db
+      .select({
+        cnr: cnrs,
+        district: districts,
+      })
+      .from(cnrs)
+      .leftJoin(districts, eq(cnrs.districtId, districts.id))
+      .where(inArray(cnrs.id, ids));
+
+    return results.map((r) => ({
+      ...r.cnr,
+      district: r.district || undefined,
+    }));
   }
 
   async createCnr(data: InsertCnr): Promise<Cnr> {

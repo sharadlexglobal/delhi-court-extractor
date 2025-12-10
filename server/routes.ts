@@ -66,6 +66,8 @@ export async function registerRoutes(
   });
 
   // Step 1: Generate CNRs ONLY (no orders)
+  const MAX_CNRS_PER_REQUEST = 100;
+  
   app.post("/api/cnrs/generate", async (req, res) => {
     try {
       const validation = cnrGenerationRequestSchema.safeParse(req.body);
@@ -75,10 +77,33 @@ export async function registerRoutes(
 
       const { districtId, startSerial, endSerial, year } = validation.data;
 
+      // Server-side cap on serial range
+      const serialCount = endSerial - startSerial + 1;
+      if (serialCount > MAX_CNRS_PER_REQUEST) {
+        return res.status(400).json({ 
+          error: `Maximum ${MAX_CNRS_PER_REQUEST} CNRs per request. You requested ${serialCount}.` 
+        });
+      }
+      if (serialCount < 1) {
+        return res.status(400).json({ error: "End serial must be >= start serial" });
+      }
+
       const district = await storage.getDistrictById(districtId);
       if (!district) {
         return res.status(404).json({ error: "District not found" });
       }
+
+      // Build all CNR strings first
+      const allCnrStrings: string[] = [];
+      for (let serial = startSerial; serial <= endSerial; serial++) {
+        const paddedSerial = serial.toString().padStart(district.serialWidth, "0");
+        const yearStr = year.toString().slice(-4);
+        allCnrStrings.push(`DL${district.codePrefix}${district.establishmentCode}${paddedSerial}${yearStr}`);
+      }
+
+      // Bulk check for existing CNRs
+      const existingCnrs = await storage.getCnrsByStrings(allCnrStrings);
+      const existingSet = new Set(existingCnrs.map(c => c.cnr));
 
       const cnrsToCreate: Array<{
         districtId: number;
@@ -87,29 +112,27 @@ export async function registerRoutes(
         year: number;
       }> = [];
 
-      for (let serial = startSerial; serial <= endSerial; serial++) {
-        const paddedSerial = serial.toString().padStart(district.serialWidth, "0");
-        const yearStr = year.toString().slice(-4);
-        const cnrString = `DL${district.codePrefix}${district.establishmentCode}${paddedSerial}${yearStr}`;
-
-        const existing = await storage.getCnrByCnr(cnrString);
-        if (!existing) {
+      for (let i = 0; i < allCnrStrings.length; i++) {
+        const cnrString = allCnrStrings[i];
+        if (!existingSet.has(cnrString)) {
           cnrsToCreate.push({
             districtId,
             cnr: cnrString,
-            serialNumber: serial,
+            serialNumber: startSerial + i,
             year,
           });
         }
       }
 
       const createdCnrs = await storage.createCnrsBatch(cnrsToCreate);
+      const allCnrIds = [...existingCnrs.map(c => c.id), ...createdCnrs.map(c => c.id)];
 
       res.json({
         cnrsCreated: createdCnrs.length,
-        cnrIds: createdCnrs.map(c => c.id),
-        cnrs: createdCnrs.map(c => c.cnr),
-        message: `Generated ${createdCnrs.length} CNRs`,
+        cnrsExisting: existingCnrs.length,
+        cnrIds: allCnrIds,
+        cnrs: allCnrStrings,
+        message: `Generated ${createdCnrs.length} new CNRs (${existingCnrs.length} already existed)`,
       });
     } catch (error) {
       console.error("Error generating CNRs:", error);
@@ -118,19 +141,51 @@ export async function registerRoutes(
   });
 
   // Step 2: Create order URLs for specific CNRs (separate action)
+  const MAX_ORDERS_PER_REQUEST = 1000; // CNRs × days × orders
+  const MAX_DAYS_RANGE = 30;
+  const MAX_ORDER_RANGE = 10;
+
   app.post("/api/orders/generate", async (req, res) => {
     try {
-      const { cnrIds, orderDate, orderNo } = req.body;
+      const { cnrIds, startDate, endDate, startOrderNo, endOrderNo } = req.body;
       
       if (!cnrIds || !Array.isArray(cnrIds) || cnrIds.length === 0) {
         return res.status(400).json({ error: "cnrIds array is required" });
       }
-      if (!orderDate) {
-        return res.status(400).json({ error: "orderDate is required" });
+      if (!startDate || !endDate) {
+        return res.status(400).json({ error: "startDate and endDate are required" });
       }
-      if (!orderNo || orderNo < 1) {
-        return res.status(400).json({ error: "orderNo is required (1 or higher)" });
+      if (!startOrderNo || !endOrderNo || startOrderNo < 1 || endOrderNo < 1) {
+        return res.status(400).json({ error: "startOrderNo and endOrderNo are required (1 or higher)" });
       }
+
+      // Calculate date range
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      
+      if (daysDiff > MAX_DAYS_RANGE) {
+        return res.status(400).json({ error: `Maximum ${MAX_DAYS_RANGE} days range allowed` });
+      }
+      if (daysDiff < 1) {
+        return res.status(400).json({ error: "End date must be >= start date" });
+      }
+
+      const orderRange = endOrderNo - startOrderNo + 1;
+      if (orderRange > MAX_ORDER_RANGE) {
+        return res.status(400).json({ error: `Maximum ${MAX_ORDER_RANGE} order numbers range allowed` });
+      }
+
+      const totalOrders = cnrIds.length * daysDiff * orderRange;
+      if (totalOrders > MAX_ORDERS_PER_REQUEST) {
+        return res.status(400).json({ 
+          error: `Maximum ${MAX_ORDERS_PER_REQUEST} orders per request. You requested ${totalOrders} (${cnrIds.length} CNRs × ${daysDiff} days × ${orderRange} orders).` 
+        });
+      }
+
+      // Bulk fetch CNRs with districts
+      const cnrsWithDistricts = await storage.getCnrsByIdsWithDistricts(cnrIds);
+      const cnrMap = new Map(cnrsWithDistricts.map(c => [c.id, c]));
 
       const ordersToCreate: Array<{
         cnrId: number;
@@ -140,28 +195,35 @@ export async function registerRoutes(
         encodedPayload: string;
       }> = [];
 
+      // Generate all date strings in range
+      const dateStrings: string[] = [];
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        dateStrings.push(d.toISOString().split("T")[0]);
+      }
+
       for (const cnrId of cnrIds) {
-        const cnr = await storage.getCnrById(cnrId);
-        if (!cnr) continue;
+        const cnrData = cnrMap.get(cnrId);
+        if (!cnrData || !cnrData.district) continue;
 
-        const district = await storage.getDistrictById(cnr.districtId);
-        if (!district) continue;
+        for (const dateStr of dateStrings) {
+          for (let orderNo = startOrderNo; orderNo <= endOrderNo; orderNo++) {
+            const payload = JSON.stringify({
+              cino: cnrData.cnr,
+              order_no: orderNo,
+              order_date: dateStr,
+            });
+            const encodedPayload = Buffer.from(payload).toString("base64");
+            const url = `${cnrData.district.baseUrl}/wp-admin/admin-ajax.php?es_ajax_request=1&action=get_order_pdf&input_strings=${encodedPayload}`;
 
-        const payload = JSON.stringify({
-          cino: cnr.cnr,
-          order_no: orderNo,
-          order_date: orderDate,
-        });
-        const encodedPayload = Buffer.from(payload).toString("base64");
-        const url = `${district.baseUrl}/wp-admin/admin-ajax.php?es_ajax_request=1&action=get_order_pdf&input_strings=${encodedPayload}`;
-
-        ordersToCreate.push({
-          cnrId,
-          orderNo,
-          orderDate,
-          url,
-          encodedPayload,
-        });
+            ordersToCreate.push({
+              cnrId,
+              orderNo,
+              orderDate: dateStr,
+              url,
+              encodedPayload,
+            });
+          }
+        }
       }
 
       const createdOrders = await storage.createOrdersBatch(ordersToCreate);
@@ -169,7 +231,9 @@ export async function registerRoutes(
       res.json({
         ordersCreated: createdOrders.length,
         orderIds: createdOrders.map(o => o.id),
-        message: `Created ${createdOrders.length} order URLs`,
+        dateRange: { startDate, endDate, days: daysDiff },
+        orderRange: { startOrderNo, endOrderNo, count: orderRange },
+        message: `Created ${createdOrders.length} order URLs (${cnrIds.length} CNRs × ${daysDiff} days × ${orderRange} orders)`,
       });
     } catch (error) {
       console.error("Error generating orders:", error);
