@@ -10,7 +10,7 @@ import { classifyOrdersForJob } from "./classifier.js";
 import { enrichEntitiesForJob } from "./entity-enrichment.js";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { seedDistricts } from "./seed";
-import { directCnrRouter } from "./direct-cnr";
+import { directCnrRouter, startDailyDigestScheduler } from "./direct-cnr";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -18,6 +18,9 @@ export async function registerRoutes(
 ): Promise<Server> {
 
   app.use("/api/direct-cnr", directCnrRouter);
+  
+  // Start the daily digest scheduler for 7 AM IST emails
+  startDailyDigestScheduler();
 
   app.get("/objects/:objectPath(*)", async (req, res) => {
     const objectStorageService = new ObjectStorageService();

@@ -530,12 +530,31 @@ directCnrRouter.post('/monitoring/run', heavyOperationLimit, async (req: Request
 
   try {
     const result = await runDailyMonitoringCheck();
+    
+    // Also check if daily digest should be sent
+    const { checkAndSendDailyDigest } = await import('./daily-digest');
+    checkAndSendDailyDigest().catch(err => {
+      console.error('[DirectCNR-API] Daily digest error:', err);
+    });
+    
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('[DirectCNR-API] Error running monitoring check:', error);
     res.status(500).json({ success: false, error: sanitizeErrorMessage(error) });
   } finally {
     releaseSchedulerLock();
+  }
+});
+
+// Manual trigger for daily digest (for testing)
+directCnrRouter.post('/digest/send', heavyOperationLimit, async (req: Request, res: Response) => {
+  try {
+    const { generateDailyDigest } = await import('./daily-digest');
+    const result = await generateDailyDigest();
+    res.json({ success: result.success, data: result });
+  } catch (error) {
+    console.error('[DirectCNR-API] Error sending digest:', error);
+    res.status(500).json({ success: false, error: 'Failed to send digest' });
   }
 });
 

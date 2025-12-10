@@ -24,3 +24,21 @@ export {
   getActiveMonitoringSchedules, 
   runDailyMonitoringCheck 
 } from './scheduler';
+export { checkAndSendDailyDigest, generateDailyDigest } from './daily-digest';
+
+// Start daily digest scheduler - checks every 5 minutes for 7 AM IST
+let digestSchedulerStarted = false;
+export function startDailyDigestScheduler(): void {
+  if (digestSchedulerStarted) return;
+  digestSchedulerStarted = true;
+  
+  console.log('[DirectCNR] Starting daily digest scheduler (checks every 5 min for 7 AM IST)');
+  
+  // Check immediately on startup
+  import('./daily-digest').then(m => m.checkAndSendDailyDigest()).catch(console.error);
+  
+  // Then check every 5 minutes
+  setInterval(() => {
+    import('./daily-digest').then(m => m.checkAndSendDailyDigest()).catch(console.error);
+  }, 5 * 60 * 1000);
+}
