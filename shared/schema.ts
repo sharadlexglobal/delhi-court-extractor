@@ -325,6 +325,10 @@ export const directCnrCases = pgTable("direct_cnr_cases", {
   registrationNumber: varchar("registration_number", { length: 100 }),
   registrationDate: date("registration_date"),
   
+  // Party representation perspective (for AI analysis)
+  representedParty: varchar("represented_party", { length: 20 }), // 'petitioner' | 'respondent' | null
+  perspectiveSetAt: timestamp("perspective_set_at"),
+  
   // Parties
   petitionerName: text("petitioner_name"),
   petitionerAdvocate: text("petitioner_advocate"),
@@ -455,6 +459,56 @@ export const directCnrMonitoring = pgTable("direct_cnr_monitoring", {
   index("idx_direct_cnr_monitoring_dates").on(table.startMonitoringDate, table.endMonitoringDate),
 ]);
 
+// Master case rollups (aggregated summaries of all orders)
+export const directCnrCaseRollups = pgTable("direct_cnr_case_rollups", {
+  id: serial("id").primaryKey(),
+  caseId: integer("case_id").notNull().references(() => directCnrCases.id, { onDelete: "cascade" }).unique(),
+  
+  // Timeline and progression summary
+  caseProgressionSummary: text("case_progression_summary"),
+  timelineJson: text("timeline_json"), // JSON array of { date, event, party, details }
+  
+  // Adjournment analytics
+  petitionerAdjournments: integer("petitioner_adjournments").default(0),
+  respondentAdjournments: integer("respondent_adjournments").default(0),
+  courtAdjournments: integer("court_adjournments").default(0), // judge leave/training
+  adjournmentDetails: text("adjournment_details"), // JSON array with reasons
+  
+  // Bird's eye view for advocate
+  advocateBirdEyeView: text("advocate_bird_eye_view"),
+  keyMilestones: text("key_milestones"), // JSON array
+  
+  // Current status
+  currentStage: varchar("current_stage", { length: 100 }),
+  pendingActions: text("pending_actions"), // JSON array
+  
+  // Compilation metadata
+  ordersIncluded: integer("orders_included").default(0),
+  lastCompiledAt: timestamp("last_compiled_at").notNull().defaultNow(),
+  compilationModel: varchar("compilation_model", { length: 100 }),
+});
+
+// Daily digest email tracking
+export const directCnrDailyDigests = pgTable("direct_cnr_daily_digests", {
+  id: serial("id").primaryKey(),
+  runDate: date("run_date").notNull(),
+  recipientEmail: varchar("recipient_email", { length: 255 }).notNull(),
+  
+  // Digest content
+  casesIncluded: integer("cases_included").notNull().default(0),
+  digestPayload: text("digest_payload"), // JSON with case summaries
+  
+  // Status
+  sentAt: timestamp("sent_at"),
+  deliveryStatus: varchar("delivery_status", { length: 50 }).default("pending"), // pending, sent, failed
+  errorMessage: text("error_message"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => [
+  index("idx_daily_digest_date").on(table.runDate),
+  uniqueIndex("uq_daily_digest").on(table.runDate, table.recipientEmail),
+]);
+
 // ============================================================================
 // DIRECT CNR RELATIONS
 // ============================================================================
@@ -474,6 +528,14 @@ export const directCnrCasesRelations = relations(directCnrCases, ({ one, many })
   }),
   orders: many(directCnrOrders),
   monitoringSchedules: many(directCnrMonitoring),
+  rollup: one(directCnrCaseRollups),
+}));
+
+export const directCnrCaseRollupsRelations = relations(directCnrCaseRollups, ({ one }) => ({
+  case: one(directCnrCases, {
+    fields: [directCnrCaseRollups.caseId],
+    references: [directCnrCases.id],
+  }),
 }));
 
 export const directCnrOrdersRelations = relations(directCnrOrders, ({ one }) => ({
@@ -532,6 +594,12 @@ export const insertDirectCnrSummarySchema = createInsertSchema(directCnrSummarie
 export const insertDirectCnrMonitoringSchema = createInsertSchema(directCnrMonitoring).omit({ 
   id: true, createdAt: true 
 });
+export const insertDirectCnrCaseRollupSchema = createInsertSchema(directCnrCaseRollups).omit({ 
+  id: true, lastCompiledAt: true 
+});
+export const insertDirectCnrDailyDigestSchema = createInsertSchema(directCnrDailyDigests).omit({ 
+  id: true, createdAt: true 
+});
 
 export type InsertDirectCnrAdvocate = z.infer<typeof insertDirectCnrAdvocateSchema>;
 export type InsertDirectCnrCase = z.infer<typeof insertDirectCnrCaseSchema>;
@@ -539,6 +607,8 @@ export type InsertDirectCnrOrder = z.infer<typeof insertDirectCnrOrderSchema>;
 export type InsertDirectCnrPdfText = z.infer<typeof insertDirectCnrPdfTextSchema>;
 export type InsertDirectCnrSummary = z.infer<typeof insertDirectCnrSummarySchema>;
 export type InsertDirectCnrMonitoring = z.infer<typeof insertDirectCnrMonitoringSchema>;
+export type InsertDirectCnrCaseRollup = z.infer<typeof insertDirectCnrCaseRollupSchema>;
+export type InsertDirectCnrDailyDigest = z.infer<typeof insertDirectCnrDailyDigestSchema>;
 
 export type DirectCnrAdvocate = typeof directCnrAdvocates.$inferSelect;
 export type DirectCnrCase = typeof directCnrCases.$inferSelect;
@@ -546,6 +616,8 @@ export type DirectCnrOrder = typeof directCnrOrders.$inferSelect;
 export type DirectCnrPdfText = typeof directCnrPdfTexts.$inferSelect;
 export type DirectCnrSummary = typeof directCnrSummaries.$inferSelect;
 export type DirectCnrMonitoring = typeof directCnrMonitoring.$inferSelect;
+export type DirectCnrCaseRollup = typeof directCnrCaseRollups.$inferSelect;
+export type DirectCnrDailyDigest = typeof directCnrDailyDigests.$inferSelect;
 
 // ============================================================================
 // END OF DIRECT CNR TABLES

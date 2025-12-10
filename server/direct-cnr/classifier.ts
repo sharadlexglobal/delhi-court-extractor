@@ -129,19 +129,47 @@ Return a JSON object:
 
 If a field cannot be determined, use null for strings and empty array [] for arrays.`;
 
+function getPerspectivePromptAddition(perspective: string | null): string {
+  if (!perspective) return '';
+  
+  const partyName = perspective === 'petitioner' ? 'PETITIONER' : 'RESPONDENT';
+  const oppositeParty = perspective === 'petitioner' ? 'respondent' : 'petitioner';
+  
+  return `
+
+## IMPORTANT: ADVOCATE PERSPECTIVE
+You are analyzing this order from the perspective of the advocate representing the **${partyName}**.
+
+In your analysis, specifically consider:
+1. **Strategic Position**: How does this order affect the ${perspective}'s position in the case?
+2. **Opportunities**: What opportunities does this order create for the ${perspective}?
+3. **Risks**: What risks or adverse points exist that the ${perspective} should address?
+4. **Counter-Strategy**: What might the ${oppositeParty} argue, and how should the ${perspective} prepare to counter?
+5. **Next Steps**: What specific actions should the ${perspective}'s advocate take?
+
+Frame all preparation notes and action items from the ${perspective}'s advocate's perspective.
+- Focus on strengthening the ${perspective}'s case
+- Identify weaknesses in the ${oppositeParty}'s position
+- Suggest legal arguments favorable to the ${perspective}
+- Recommend evidence gathering that supports the ${perspective}'s claims`;
+}
+
 export async function classifyDirectCnrOrder(
   orderId: number,
-  text: string
+  text: string,
+  perspective?: string | null
 ): Promise<DirectCnrClassificationResult | null> {
   const openai = getOpenAI();
   const truncatedText = text.length > 15000 ? text.substring(0, 15000) + "..." : text;
+  const perspectiveAddition = getPerspectivePromptAddition(perspective || null);
+  const fullPrompt = DIRECT_CNR_CLASSIFICATION_PROMPT + perspectiveAddition;
 
   try {
     const response = await withRetry(
       async () => openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
-          { role: "system", content: DIRECT_CNR_CLASSIFICATION_PROMPT },
+          { role: "system", content: fullPrompt },
           { role: "user", content: `Analyze this court order:\n\n${truncatedText}` }
         ],
         response_format: { type: "json_object" },
@@ -171,7 +199,7 @@ export async function classifyDirectCnrOrder(
   }
 }
 
-export async function classifyAndSaveOrder(order: DirectCnrOrder): Promise<boolean> {
+export async function classifyAndSaveOrder(order: DirectCnrOrder, perspective?: string | null): Promise<boolean> {
   const [pdfText] = await db.select()
     .from(directCnrPdfTexts)
     .where(eq(directCnrPdfTexts.orderId, order.id))
@@ -183,7 +211,7 @@ export async function classifyAndSaveOrder(order: DirectCnrOrder): Promise<boole
   }
 
   const textToClassify = pdfText.cleanedText || pdfText.rawText;
-  const result = await classifyDirectCnrOrder(order.id, textToClassify);
+  const result = await classifyDirectCnrOrder(order.id, textToClassify, perspective);
 
   if (!result) {
     return false;
@@ -235,7 +263,7 @@ export async function classifyAndSaveOrder(order: DirectCnrOrder): Promise<boole
   return true;
 }
 
-export async function classifyAllOrdersForCase(caseId: number): Promise<{
+export async function classifyAllOrdersForCase(caseId: number, perspective?: string | null): Promise<{
   total: number;
   successful: number;
   failed: number;
@@ -244,15 +272,20 @@ export async function classifyAllOrdersForCase(caseId: number): Promise<{
     .from(directCnrOrders)
     .where(eq(directCnrOrders.caseId, caseId));
 
-  const pendingOrders = orders.filter(o => o.textExtracted && !o.classificationDone);
+  // If perspective is provided, reclassify ALL orders (for perspective change)
+  // Otherwise, only classify pending orders
+  const ordersToClassify = perspective 
+    ? orders.filter(o => o.textExtracted) 
+    : orders.filter(o => o.textExtracted && !o.classificationDone);
 
-  console.log(`[DirectCNR-Classifier] Classifying ${pendingOrders.length} orders for case ${caseId}`);
+  const action = perspective ? 'Reclassifying with perspective' : 'Classifying';
+  console.log(`[DirectCNR-Classifier] ${action} ${ordersToClassify.length} orders for case ${caseId}${perspective ? ` (${perspective})` : ''}`);
 
   let successful = 0;
   let failed = 0;
 
-  for (const order of pendingOrders) {
-    const success = await classifyAndSaveOrder(order);
+  for (const order of ordersToClassify) {
+    const success = await classifyAndSaveOrder(order, perspective);
     if (success) {
       successful++;
     } else {
@@ -260,7 +293,7 @@ export async function classifyAllOrdersForCase(caseId: number): Promise<{
     }
   }
 
-  return { total: pendingOrders.length, successful, failed };
+  return { total: ordersToClassify.length, successful, failed };
 }
 
 export async function getSummaryByOrderId(orderId: number): Promise<DirectCnrSummary | null> {

@@ -58,7 +58,13 @@ import {
   Download,
   Brain,
   RefreshCw,
+  Users,
+  BarChart3,
+  FileSearch,
 } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
+import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 interface Advocate {
   id: number;
@@ -89,8 +95,28 @@ interface DirectCase {
   courtName: string | null;
   caseDetailsExtracted: boolean;
   initialOrdersDownloaded: boolean;
+  representedParty: string | null;
+  perspectiveSetAt: string | null;
+  judgeName: string | null;
   createdAt: string;
   orders?: DirectOrder[];
+}
+
+interface MasterSummary {
+  id: number;
+  caseId: number;
+  caseProgressionSummary: string | null;
+  timeline: Array<{ date: string; event: string; party: string | null; significance: string }>;
+  petitionerAdjournments: number;
+  respondentAdjournments: number;
+  courtAdjournments: number;
+  adjournmentDetails: Array<{ date: string; party: string; reason: string }>;
+  advocateBirdEyeView: string | null;
+  keyMilestones: Array<{ date: string; milestone: string; completed: boolean }>;
+  currentStage: string | null;
+  pendingActions: string[];
+  ordersIncluded: number;
+  lastCompiledAt: string;
 }
 
 interface DirectOrder {
@@ -143,6 +169,10 @@ export default function DirectCnr() {
   const [cnrValidation, setCnrValidation] = useState<{ valid: boolean; data?: any } | null>(null);
   const [isValidating, setIsValidating] = useState(false);
   const [advocateDialogOpen, setAdvocateDialogOpen] = useState(false);
+  const [partyDialogOpen, setPartyDialogOpen] = useState(false);
+  const [selectedParty, setSelectedParty] = useState<string>("");
+  const [pdfPreviewOrderId, setPdfPreviewOrderId] = useState<number | null>(null);
+  const [showMasterSummary, setShowMasterSummary] = useState(false);
   const { toast } = useToast();
 
   const { data: advocates, isLoading: advocatesLoading } = useQuery<{ success: boolean; data: Advocate[] }>({
@@ -165,6 +195,46 @@ export default function DirectCnr() {
 
   const { data: monitoring } = useQuery<{ success: boolean; data: MonitoringSchedule[] }>({
     queryKey: ["/api/direct-cnr/monitoring/active"],
+  });
+
+  const { data: masterSummary, isLoading: summaryLoading, refetch: refetchSummary } = useQuery<{ success: boolean; data: MasterSummary }>({
+    queryKey: ["/api/direct-cnr/cases", selectedCaseId, "summary"],
+    queryFn: async () => {
+      const res = await fetch(`/api/direct-cnr/cases/${selectedCaseId}/summary`);
+      return res.json();
+    },
+    enabled: selectedCaseId !== null && showMasterSummary,
+  });
+
+  const setPartyMutation = useMutation({
+    mutationFn: async ({ caseId, party }: { caseId: number; party: string }) => {
+      const res = await apiRequest("POST", `/api/direct-cnr/cases/${caseId}/party`, {
+        representedParty: party,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Perspective Set", description: "AI analysis will be updated with your perspective." });
+      queryClient.invalidateQueries({ queryKey: ["/api/direct-cnr/cases", selectedCaseId] });
+      setPartyDialogOpen(false);
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const generateSummaryMutation = useMutation({
+    mutationFn: async (caseId: number) => {
+      const res = await apiRequest("POST", `/api/direct-cnr/cases/${caseId}/summary/refresh`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Summary Generated", description: "Master summary has been created." });
+      refetchSummary();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed", description: error.message, variant: "destructive" });
+    },
   });
 
   const cnrForm = useForm<CnrFormValues>({
@@ -635,7 +705,155 @@ export default function DirectCnr() {
 
                 <Separator className="my-4" />
 
-                <h3 className="text-lg font-medium mb-3">Orders & AI Summaries</h3>
+                {/* Party Perspective & Master Summary Controls */}
+                <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-medium">Orders & AI Summaries</h3>
+                    {selectedCase.data.representedParty && (
+                      <Badge variant="outline" className="ml-2">
+                        <Users className="h-3 w-3 mr-1" />
+                        {selectedCase.data.representedParty === "petitioner" ? "Petitioner" : "Respondent"} View
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedParty(selectedCase.data.representedParty || "");
+                        setPartyDialogOpen(true);
+                      }}
+                      data-testid="button-set-party"
+                    >
+                      <Users className="h-4 w-4 mr-2" />
+                      {selectedCase.data.representedParty ? "Change Perspective" : "Set Party Perspective"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowMasterSummary(!showMasterSummary)}
+                      data-testid="button-master-summary"
+                    >
+                      <BarChart3 className="h-4 w-4 mr-2" />
+                      {showMasterSummary ? "Hide Summary" : "Master Summary"}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Master Summary Panel */}
+                {showMasterSummary && (
+                  <Card className="mb-4 bg-primary/5 border-primary/20">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between gap-4">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <BarChart3 className="h-5 w-5" />
+                          Master Case Summary
+                        </CardTitle>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => generateSummaryMutation.mutate(selectedCaseId!)}
+                          disabled={generateSummaryMutation.isPending}
+                          data-testid="button-generate-summary"
+                        >
+                          {generateSummaryMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-4 w-4 mr-1" />
+                          )}
+                          {masterSummary?.success ? "Refresh" : "Generate"}
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      {summaryLoading ? (
+                        <div className="flex items-center justify-center py-8">
+                          <Loader2 className="h-6 w-6 animate-spin" />
+                        </div>
+                      ) : masterSummary?.success && masterSummary.data ? (
+                        <div className="space-y-4">
+                          {/* Current Stage */}
+                          {masterSummary.data.currentStage && (
+                            <div>
+                              <h4 className="text-sm font-medium mb-1">Current Stage</h4>
+                              <Badge>{masterSummary.data.currentStage}</Badge>
+                            </div>
+                          )}
+
+                          {/* Bird's Eye View */}
+                          {masterSummary.data.advocateBirdEyeView && (
+                            <div>
+                              <h4 className="text-sm font-medium mb-1">Advocate Overview</h4>
+                              <p className="text-sm text-muted-foreground whitespace-pre-line">
+                                {masterSummary.data.advocateBirdEyeView}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Adjournment Stats */}
+                          <div className="grid gap-3 md:grid-cols-3">
+                            <div className="p-3 rounded-md bg-background border">
+                              <div className="text-2xl font-bold">{masterSummary.data.petitionerAdjournments}</div>
+                              <div className="text-xs text-muted-foreground">Petitioner Adjournments</div>
+                            </div>
+                            <div className="p-3 rounded-md bg-background border">
+                              <div className="text-2xl font-bold">{masterSummary.data.respondentAdjournments}</div>
+                              <div className="text-xs text-muted-foreground">Respondent Adjournments</div>
+                            </div>
+                            <div className="p-3 rounded-md bg-background border">
+                              <div className="text-2xl font-bold">{masterSummary.data.courtAdjournments}</div>
+                              <div className="text-xs text-muted-foreground">Court Adjournments</div>
+                            </div>
+                          </div>
+
+                          {/* Pending Actions */}
+                          {masterSummary.data.pendingActions?.length > 0 && (
+                            <div>
+                              <h4 className="text-sm font-medium mb-2">Pending Actions</h4>
+                              <ul className="space-y-1">
+                                {masterSummary.data.pendingActions.map((action, i) => (
+                                  <li key={i} className="flex items-start gap-2 text-sm">
+                                    <AlertCircle className="h-4 w-4 mt-0.5 text-amber-500 shrink-0" />
+                                    {action}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {/* Timeline */}
+                          {masterSummary.data.timeline?.length > 0 && (
+                            <div>
+                              <h4 className="text-sm font-medium mb-2">Timeline</h4>
+                              <div className="space-y-2 max-h-48 overflow-y-auto">
+                                {masterSummary.data.timeline.map((item, i) => (
+                                  <div key={i} className="flex items-start gap-3 text-sm p-2 rounded bg-background border">
+                                    <span className="font-mono text-xs text-muted-foreground shrink-0">{item.date}</span>
+                                    <span>{item.event}</span>
+                                    {item.party && (
+                                      <Badge variant="outline" className="shrink-0">{item.party}</Badge>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="text-xs text-muted-foreground pt-2 border-t">
+                            Last updated: {new Date(masterSummary.data.lastCompiledAt).toLocaleString()} | {masterSummary.data.ordersIncluded} orders analyzed
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-6 text-muted-foreground">
+                          <BarChart3 className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                          <p>No master summary generated yet</p>
+                          <p className="text-sm">Click "Generate" to create a comprehensive case overview</p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
                 {!selectedCase.data.orders || selectedCase.data.orders.length === 0 ? (
                   <div className="text-center py-6 text-muted-foreground">
                     <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
@@ -656,7 +874,7 @@ export default function DirectCnr() {
                     {selectedCase.data.orders?.map((order) => (
                       <AccordionItem key={order.id} value={`order-${order.id}`} className="border rounded-md px-4">
                         <AccordionTrigger className="hover:no-underline py-3" data-testid={`accordion-order-${order.id}`}>
-                          <div className="flex items-center gap-3 text-left">
+                          <div className="flex items-center gap-3 text-left flex-wrap">
                             <Badge variant={order.classificationDone ? "default" : "secondary"}>
                               Order {order.orderNo}
                             </Badge>
@@ -678,6 +896,21 @@ export default function DirectCnr() {
                                 <XCircle className="h-3 w-3 text-muted-foreground" />
                               )}
                             </div>
+                            {order.pdfExists && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="ml-auto"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPdfPreviewOrderId(order.id);
+                                }}
+                                data-testid={`button-preview-pdf-${order.id}`}
+                              >
+                                <FileSearch className="h-3 w-3 mr-1" />
+                                View PDF
+                              </Button>
+                            )}
                           </div>
                         </AccordionTrigger>
                         <AccordionContent className="pt-2 pb-4">
@@ -938,6 +1171,78 @@ export default function DirectCnr() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Party Selection Dialog */}
+      <Dialog open={partyDialogOpen} onOpenChange={setPartyDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Select Your Party
+            </DialogTitle>
+            <DialogDescription>
+              Choose which party you represent. AI analysis will be tailored to provide strategic guidance from your perspective.
+            </DialogDescription>
+          </DialogHeader>
+          <RadioGroup value={selectedParty} onValueChange={setSelectedParty} className="space-y-3 pt-4">
+            <div className="flex items-center space-x-3 p-3 border rounded-md hover-elevate cursor-pointer" onClick={() => setSelectedParty("petitioner")}>
+              <RadioGroupItem value="petitioner" id="petitioner" data-testid="radio-petitioner" />
+              <Label htmlFor="petitioner" className="flex-1 cursor-pointer">
+                <div className="font-medium">Petitioner / Complainant</div>
+                <div className="text-sm text-muted-foreground">You represent the party who filed the case</div>
+              </Label>
+            </div>
+            <div className="flex items-center space-x-3 p-3 border rounded-md hover-elevate cursor-pointer" onClick={() => setSelectedParty("respondent")}>
+              <RadioGroupItem value="respondent" id="respondent" data-testid="radio-respondent" />
+              <Label htmlFor="respondent" className="flex-1 cursor-pointer">
+                <div className="font-medium">Respondent / Defendant</div>
+                <div className="text-sm text-muted-foreground">You represent the party against whom the case was filed</div>
+              </Label>
+            </div>
+          </RadioGroup>
+          <DialogFooter className="pt-4">
+            <Button variant="outline" onClick={() => setPartyDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedCaseId && selectedParty) {
+                  setPartyMutation.mutate({ caseId: selectedCaseId, party: selectedParty });
+                }
+              }}
+              disabled={!selectedParty || setPartyMutation.isPending}
+              data-testid="button-confirm-party"
+            >
+              {setPartyMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
+              Set Perspective
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* PDF Preview Dialog */}
+      <Dialog open={pdfPreviewOrderId !== null} onOpenChange={(open) => !open && setPdfPreviewOrderId(null)}>
+        <DialogContent className="max-w-4xl h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Order PDF Preview
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 h-full min-h-0">
+            {pdfPreviewOrderId && (
+              <iframe
+                src={`/api/direct-cnr/orders/${pdfPreviewOrderId}/pdf`}
+                className="w-full h-full border rounded-md"
+                title="PDF Preview"
+                data-testid="iframe-pdf-preview"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

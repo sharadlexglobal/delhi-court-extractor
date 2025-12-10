@@ -22,7 +22,7 @@ import { extractTextForAllOrders } from './text-extractor';
 import { classifyAllOrdersForCase, getSummaryByOrderId } from './classifier';
 import { createMonitoringSchedule, getActiveMonitoringSchedules, runDailyMonitoringCheck } from './scheduler';
 import { db } from '../db';
-import { directCnrSummaries, directCnrOrders } from '@shared/schema';
+import { directCnrSummaries, directCnrOrders, directCnrCases, directCnrCaseRollups } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 import { rateLimit, heavyOperationLimit, sanitizeErrorMessage, acquireSchedulerLock, releaseSchedulerLock } from './middleware';
 
@@ -40,6 +40,10 @@ const createAdvocateSchema = z.object({
 const registerCaseSchema = z.object({
   cnr: z.string().min(16).max(16),
   advocateId: z.number().optional()
+});
+
+const setPartySchema = z.object({
+  representedParty: z.enum(['petitioner', 'respondent'])
 });
 
 directCnrRouter.get('/advocates', async (req: Request, res: Response) => {
@@ -103,6 +107,187 @@ directCnrRouter.get('/cases/:id', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('[DirectCNR-API] Error fetching case:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch case' });
+  }
+});
+
+// PDF Preview endpoint - Stream original PDF for viewing
+directCnrRouter.get('/orders/:orderId/pdf', async (req: Request, res: Response) => {
+  try {
+    const orderId = parseInt(req.params.orderId);
+    
+    const [order] = await db.select()
+      .from(directCnrOrders)
+      .where(eq(directCnrOrders.id, orderId))
+      .limit(1);
+    
+    if (!order) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+    
+    if (!order.pdfExists || !order.pdfPath) {
+      return res.status(404).json({ success: false, error: 'PDF not available for this order' });
+    }
+    
+    const { ObjectStorageService } = await import('../objectStorage');
+    const objectStorageService = new ObjectStorageService();
+    const file = await objectStorageService.getPdfFile(order.pdfPath);
+    
+    // Stream the PDF with appropriate headers for inline viewing
+    const [metadata] = await file.getMetadata();
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Length': metadata.size as string,
+      'Content-Disposition': `inline; filename="${order.pdfPath.split('/').pop()}"`,
+      'Cache-Control': 'private, max-age=3600',
+    });
+    
+    const stream = file.createReadStream();
+    stream.on('error', (err) => {
+      console.error('[DirectCNR-PDF] Stream error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, error: 'Error streaming PDF' });
+      }
+    });
+    stream.pipe(res);
+    
+  } catch (error) {
+    console.error('[DirectCNR-API] Error fetching PDF:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: 'Failed to fetch PDF' });
+    }
+  }
+});
+
+// Set represented party for perspective-aware AI analysis
+directCnrRouter.post('/cases/:id/party', async (req: Request, res: Response) => {
+  try {
+    const caseId = parseInt(req.params.id);
+    const { representedParty } = setPartySchema.parse(req.body);
+    
+    const [existingCase] = await db.select()
+      .from(directCnrCases)
+      .where(eq(directCnrCases.id, caseId))
+      .limit(1);
+    
+    if (!existingCase) {
+      return res.status(404).json({ success: false, error: 'Case not found' });
+    }
+    
+    // Update the case with the selected party perspective
+    await db.update(directCnrCases)
+      .set({
+        representedParty,
+        perspectiveSetAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(directCnrCases.id, caseId));
+    
+    console.log(`[DirectCNR-API] Set party perspective for case ${caseId}: ${representedParty}`);
+    
+    // Trigger background reclassification with new perspective
+    // This runs async so user doesn't wait
+    reclassifyWithPerspective(caseId, representedParty).catch(err => {
+      console.error(`[DirectCNR-API] Background reclassification failed for case ${caseId}:`, err);
+    });
+    
+    res.json({
+      success: true,
+      data: { representedParty },
+      message: `Perspective set to ${representedParty}. AI analysis will be updated with this viewpoint.`
+    });
+    
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: error.errors });
+    }
+    console.error('[DirectCNR-API] Error setting party:', error);
+    res.status(500).json({ success: false, error: 'Failed to set party perspective' });
+  }
+});
+
+// Helper function to reclassify orders with new perspective (runs in background)
+async function reclassifyWithPerspective(caseId: number, perspective: string) {
+  try {
+    const { classifyAllOrdersForCase: reclassify } = await import('./classifier');
+    await reclassify(caseId, perspective);
+    console.log(`[DirectCNR-API] Reclassification complete for case ${caseId} with ${perspective} perspective`);
+  } catch (error) {
+    console.error(`[DirectCNR-API] Reclassification error:`, error);
+    throw error;
+  }
+}
+
+// Get master summary for a case
+directCnrRouter.get('/cases/:id/summary', async (req: Request, res: Response) => {
+  try {
+    const caseId = parseInt(req.params.id);
+    const { getMasterSummary } = await import('./summary-generator');
+    const summary = await getMasterSummary(caseId);
+    
+    if (!summary) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'No master summary found. Generate one first.' 
+      });
+    }
+    
+    // Parse JSON fields for response
+    res.json({
+      success: true,
+      data: {
+        ...summary,
+        timeline: summary.timelineJson ? JSON.parse(summary.timelineJson) : [],
+        adjournmentDetails: summary.adjournmentDetails ? JSON.parse(summary.adjournmentDetails) : [],
+        keyMilestones: summary.keyMilestones ? JSON.parse(summary.keyMilestones) : [],
+        pendingActions: summary.pendingActions ? JSON.parse(summary.pendingActions) : [],
+      }
+    });
+  } catch (error) {
+    console.error('[DirectCNR-API] Error fetching master summary:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch master summary' });
+  }
+});
+
+// Generate/refresh master summary for a case
+directCnrRouter.post('/cases/:id/summary/refresh', heavyOperationLimit, async (req: Request, res: Response) => {
+  try {
+    const caseId = parseInt(req.params.id);
+    
+    const [caseRecord] = await db.select()
+      .from(directCnrCases)
+      .where(eq(directCnrCases.id, caseId))
+      .limit(1);
+    
+    if (!caseRecord) {
+      return res.status(404).json({ success: false, error: 'Case not found' });
+    }
+    
+    console.log(`[DirectCNR-API] Generating master summary for case ${caseId}`);
+    
+    const { generateMasterSummary } = await import('./summary-generator');
+    const summary = await generateMasterSummary(caseId);
+    
+    if (!summary) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Failed to generate master summary. Ensure case has classified orders.' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        ...summary,
+        timeline: summary.timelineJson ? JSON.parse(summary.timelineJson) : [],
+        adjournmentDetails: summary.adjournmentDetails ? JSON.parse(summary.adjournmentDetails) : [],
+        keyMilestones: summary.keyMilestones ? JSON.parse(summary.keyMilestones) : [],
+        pendingActions: summary.pendingActions ? JSON.parse(summary.pendingActions) : [],
+      },
+      message: 'Master summary generated successfully'
+    });
+  } catch (error) {
+    console.error('[DirectCNR-API] Error generating master summary:', error);
+    res.status(500).json({ success: false, error: 'Failed to generate master summary' });
   }
 });
 
