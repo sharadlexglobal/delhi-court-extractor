@@ -22,9 +22,11 @@ import { extractTextForAllOrders } from './text-extractor';
 import { classifyAllOrdersForCase, getSummaryByOrderId } from './classifier';
 import { createMonitoringSchedule, getActiveMonitoringSchedules, runDailyMonitoringCheck } from './scheduler';
 import { db } from '../db';
-import { directCnrSummaries, directCnrOrders, directCnrCases, directCnrCaseRollups } from '@shared/schema';
+import { directCnrSummaries, directCnrOrders, directCnrCases, directCnrCaseRollups, directCnrBusinessLeads } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 import { rateLimit, heavyOperationLimit, sanitizeErrorMessage, acquireSchedulerLock, releaseSchedulerLock } from './middleware';
+import { classifyBusinessEntitiesForCase } from './business-entity-classifier';
+import { searchIndiamartProfile, enrichPendingLeads } from './indiamart-search';
 
 export const directCnrRouter = Router();
 
@@ -585,5 +587,73 @@ directCnrRouter.get('/validate-cnr/:cnr', async (req: Request, res: Response) =>
   } catch (error) {
     console.error('[DirectCNR-API] Error validating CNR:', error);
     res.status(500).json({ success: false, error: 'Failed to validate CNR' });
+  }
+});
+
+directCnrRouter.post('/cases/:id/classify-entities', heavyOperationLimit, async (req: Request, res: Response) => {
+  try {
+    const caseId = parseInt(req.params.id);
+    const result = await classifyBusinessEntitiesForCase(caseId);
+    res.json({ success: result.success, data: result });
+  } catch (error) {
+    console.error('[DirectCNR-API] Error classifying entities:', error);
+    res.status(500).json({ success: false, error: 'Failed to classify business entities' });
+  }
+});
+
+directCnrRouter.get('/cases/:id/leads', async (req: Request, res: Response) => {
+  try {
+    const caseId = parseInt(req.params.id);
+    const leads = await db.select()
+      .from(directCnrBusinessLeads)
+      .where(eq(directCnrBusinessLeads.caseId, caseId));
+    res.json({ success: true, data: leads });
+  } catch (error) {
+    console.error('[DirectCNR-API] Error fetching leads:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch business leads' });
+  }
+});
+
+directCnrRouter.get('/leads', async (req: Request, res: Response) => {
+  try {
+    const leads = await db.select()
+      .from(directCnrBusinessLeads)
+      .orderBy(directCnrBusinessLeads.createdAt);
+    res.json({ success: true, data: leads });
+  } catch (error) {
+    console.error('[DirectCNR-API] Error fetching all leads:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch business leads' });
+  }
+});
+
+directCnrRouter.post('/leads/:id/enrich', heavyOperationLimit, async (req: Request, res: Response) => {
+  try {
+    const leadId = parseInt(req.params.id);
+    const lead = await db.select()
+      .from(directCnrBusinessLeads)
+      .where(eq(directCnrBusinessLeads.id, leadId))
+      .limit(1);
+    
+    if (!lead.length) {
+      return res.status(404).json({ success: false, error: 'Lead not found' });
+    }
+
+    const searchName = lead[0].normalizedName || lead[0].rawName;
+    const result = await searchIndiamartProfile(leadId, searchName);
+    res.json({ success: result.success, data: result.result, error: result.error });
+  } catch (error) {
+    console.error('[DirectCNR-API] Error enriching lead:', error);
+    res.status(500).json({ success: false, error: 'Failed to enrich lead' });
+  }
+});
+
+directCnrRouter.post('/leads/enrich-batch', heavyOperationLimit, async (req: Request, res: Response) => {
+  try {
+    const limit = req.body.limit || 5;
+    const result = await enrichPendingLeads(limit);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('[DirectCNR-API] Error in batch enrichment:', error);
+    res.status(500).json({ success: false, error: 'Failed to enrich leads' });
   }
 });

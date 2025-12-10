@@ -73,6 +73,12 @@ import {
   ChevronRight,
   ZoomIn,
   ZoomOut,
+  Building2,
+  ExternalLink,
+  Phone,
+  Mail,
+  MapPin,
+  Sparkles,
 } from "lucide-react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
@@ -161,6 +167,31 @@ interface MonitoringSchedule {
   totalChecks: number;
 }
 
+interface BusinessLead {
+  id: number;
+  caseId: number;
+  rawName: string;
+  normalizedName: string | null;
+  entityType: string | null;
+  partyRole: string | null;
+  businessIndicators: string | null;
+  classificationConfidence: number | null;
+  isConfirmedBusiness: boolean;
+  indiamartSearchQuery: string | null;
+  indiamartProfileUrl: string | null;
+  indiamartSearchResults: string | null;
+  cin: string | null;
+  gstin: string | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  city: string | null;
+  state: string | null;
+  enrichmentStatus: string | null;
+  enrichedAt: string | null;
+  createdAt: string;
+}
+
 const cnrFormSchema = z.object({
   cnr: z.string().length(16, "CNR must be exactly 16 characters"),
   advocateId: z.string().optional(),
@@ -221,6 +252,15 @@ export default function DirectCnr() {
     enabled: selectedCaseId !== null && showMasterSummary,
   });
 
+  const { data: businessLeads, refetch: refetchLeads } = useQuery<{ success: boolean; data: BusinessLead[] }>({
+    queryKey: ["/api/direct-cnr/cases", selectedCaseId, "leads"],
+    queryFn: async () => {
+      const res = await fetch(`/api/direct-cnr/cases/${selectedCaseId}/leads`);
+      return res.json();
+    },
+    enabled: selectedCaseId !== null,
+  });
+
   const setPartyMutation = useMutation({
     mutationFn: async ({ caseId, party }: { caseId: number; party: string }) => {
       const res = await apiRequest("POST", `/api/direct-cnr/cases/${caseId}/party`, {
@@ -246,6 +286,34 @@ export default function DirectCnr() {
     onSuccess: () => {
       toast({ title: "Summary Generated", description: "Master summary has been created." });
       refetchSummary();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const classifyEntitiesMutation = useMutation({
+    mutationFn: async (caseId: number) => {
+      const res = await apiRequest("POST", `/api/direct-cnr/cases/${caseId}/classify-entities`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Classification Complete", description: `Found ${data.data?.leads || 0} business leads.` });
+      refetchLeads();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const enrichLeadMutation = useMutation({
+    mutationFn: async (leadId: number) => {
+      const res = await apiRequest("POST", `/api/direct-cnr/leads/${leadId}/enrich`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Lead Enriched", description: "IndiaMART search complete." });
+      refetchLeads();
     },
     onError: (error: any) => {
       toast({ title: "Failed", description: error.message, variant: "destructive" });
@@ -408,6 +476,10 @@ export default function DirectCnr() {
           <TabsTrigger value="cases" data-testid="tab-cases">
             <Scale className="h-4 w-4 mr-2" />
             Cases
+          </TabsTrigger>
+          <TabsTrigger value="leads" data-testid="tab-leads">
+            <Building2 className="h-4 w-4 mr-2" />
+            Leads
           </TabsTrigger>
           <TabsTrigger value="advocates" data-testid="tab-advocates">
             <User className="h-4 w-4 mr-2" />
@@ -1000,6 +1072,171 @@ export default function DirectCnr() {
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="leads" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Building2 className="h-5 w-5" />
+                    Business Leads
+                  </CardTitle>
+                  <CardDescription>Business entities identified from court cases</CardDescription>
+                </div>
+                {selectedCaseId && (
+                  <Button
+                    onClick={() => classifyEntitiesMutation.mutate(selectedCaseId)}
+                    disabled={classifyEntitiesMutation.isPending}
+                    data-testid="button-classify-entities"
+                  >
+                    {classifyEntitiesMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4 mr-2" />
+                    )}
+                    Identify Business Entities
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {!selectedCaseId ? (
+                <div className="text-center py-6 text-muted-foreground">
+                  <Building2 className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>Select a case from the "Cases" tab to view business leads</p>
+                </div>
+              ) : !businessLeads?.data || businessLeads.data.length === 0 ? (
+                <div className="text-center py-6 text-muted-foreground">
+                  <Building2 className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>No business entities identified yet</p>
+                  <p className="text-sm mt-2">Click "Identify Business Entities" to scan party names</p>
+                </div>
+              ) : (
+                <div className="space-y-3" data-testid="list-business-leads">
+                  {businessLeads.data.map((lead) => (
+                    <Card key={lead.id} className="overflow-hidden" data-testid={`card-lead-${lead.id}`}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-4 flex-wrap">
+                          <div className="space-y-2 flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="font-medium truncate" data-testid={`text-lead-name-${lead.id}`}>{lead.normalizedName || lead.rawName}</h4>
+                              {lead.entityType && (
+                                <Badge variant="outline" className="shrink-0" data-testid={`badge-entity-type-${lead.id}`}>
+                                  {lead.entityType.replace('_', ' ').toUpperCase()}
+                                </Badge>
+                              )}
+                              {lead.partyRole && (
+                                <Badge variant={lead.partyRole === 'petitioner' ? 'default' : 'secondary'} className="shrink-0" data-testid={`badge-party-role-${lead.id}`}>
+                                  {lead.partyRole}
+                                </Badge>
+                              )}
+                              {lead.isConfirmedBusiness && (
+                                <Badge className="bg-green-500/10 text-green-600 border-green-500/30 shrink-0" data-testid={`badge-confirmed-${lead.id}`}>
+                                  Confirmed
+                                </Badge>
+                              )}
+                            </div>
+                            
+                            {(lead.city || lead.state) && (
+                              <div className="flex items-center gap-1 text-sm text-muted-foreground" data-testid={`text-lead-location-${lead.id}`}>
+                                <MapPin className="h-3 w-3" />
+                                {[lead.city, lead.state].filter(Boolean).join(', ')}
+                              </div>
+                            )}
+
+                            {lead.gstin && (
+                              <div className="text-sm text-muted-foreground" data-testid={`text-lead-gstin-${lead.id}`}>
+                                GSTIN: <span className="font-mono">{lead.gstin}</span>
+                              </div>
+                            )}
+
+                            <div className="flex items-center gap-4 text-sm flex-wrap">
+                              {lead.phone && (
+                                <a href={`tel:${lead.phone}`} className="flex items-center gap-1 text-muted-foreground hover:text-foreground" data-testid={`link-lead-phone-${lead.id}`}>
+                                  <Phone className="h-3 w-3" />
+                                  {lead.phone}
+                                </a>
+                              )}
+                              {lead.email && (
+                                <a href={`mailto:${lead.email}`} className="flex items-center gap-1 text-muted-foreground hover:text-foreground" data-testid={`link-lead-email-${lead.id}`}>
+                                  <Mail className="h-3 w-3" />
+                                  {lead.email}
+                                </a>
+                              )}
+                            </div>
+
+                            {lead.indiamartProfileUrl && (
+                              <a
+                                href={lead.indiamartProfileUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
+                                data-testid={`link-indiamart-${lead.id}`}
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                View on IndiaMART
+                              </a>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Badge 
+                              variant={
+                                lead.enrichmentStatus === 'enriched' ? 'default' :
+                                lead.enrichmentStatus === 'failed' ? 'destructive' :
+                                lead.enrichmentStatus === 'searching' ? 'secondary' : 'outline'
+                              }
+                              data-testid={`badge-enrichment-status-${lead.id}`}
+                            >
+                              {lead.enrichmentStatus || 'pending'}
+                            </Badge>
+                            {lead.enrichmentStatus === 'pending' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => enrichLeadMutation.mutate(lead.id)}
+                                disabled={enrichLeadMutation.isPending}
+                                data-testid={`button-enrich-lead-${lead.id}`}
+                              >
+                                {enrichLeadMutation.isPending ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Search className="h-3 w-3" />
+                                )}
+                                <span className="ml-1">Search IndiaMART</span>
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+
+                        {lead.classificationConfidence !== null && (
+                          <div className="mt-3 pt-3 border-t" data-testid={`section-confidence-${lead.id}`}>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <span data-testid={`text-confidence-${lead.id}`}>Confidence: {Math.round((lead.classificationConfidence || 0) * 100)}%</span>
+                              {lead.businessIndicators && (() => {
+                                try {
+                                  const indicators = JSON.parse(lead.businessIndicators) as string[];
+                                  return indicators.length > 0 ? (
+                                    <span className="text-muted-foreground">
+                                      Indicators: {indicators.join(', ')}
+                                    </span>
+                                  ) : null;
+                                } catch {
+                                  return null;
+                                }
+                              })()}
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="advocates" className="space-y-4">
