@@ -376,10 +376,43 @@ export default function Orders() {
                         )}
                       </div>
                     )}
+                    
+                    {selectedOrder.metadata.caseTitle && (
+                      <div className="rounded-md border p-3">
+                        <p className="text-sm font-medium text-muted-foreground">Case Title</p>
+                        <p className="text-lg font-semibold" data-testid="text-case-title">{selectedOrder.metadata.caseTitle}</p>
+                      </div>
+                    )}
+                    
+                    {selectedOrder.metadata.statutoryActName && (
+                      <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
+                        <p className="text-sm font-medium text-muted-foreground">Statutory Act</p>
+                        <p className="font-medium" data-testid="text-statutory-act">{selectedOrder.metadata.statutoryActName}</p>
+                      </div>
+                    )}
+                    
+                    {selectedOrder.metadata.orderSummary && (
+                      <div className="rounded-md border p-3">
+                        <p className="text-sm font-medium text-muted-foreground">Order Summary</p>
+                        <p className="text-sm" data-testid="text-order-summary">{selectedOrder.metadata.orderSummary}</p>
+                      </div>
+                    )}
+                    
+                    {selectedOrder.metadata.isFreshCaseAssignment && selectedOrder.metadata.freshCasePhrase && (
+                      <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3">
+                        <p className="text-sm font-medium text-muted-foreground">Fresh Case Detected</p>
+                        <p className="text-sm italic" data-testid="text-fresh-case-phrase">"{selectedOrder.metadata.freshCasePhrase}"</p>
+                      </div>
+                    )}
+                    
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-sm font-medium text-muted-foreground">Case Type</p>
                         <p>{selectedOrder.metadata.caseType || "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Case Category</p>
+                        <p>{selectedOrder.metadata.caseCategory || "-"}</p>
                       </div>
                       <div>
                         <p className="text-sm font-medium text-muted-foreground">Judge</p>
@@ -393,8 +426,12 @@ export default function Orders() {
                         <p className="text-sm font-medium text-muted-foreground">Order Type</p>
                         <p>{selectedOrder.metadata.orderType || "-"}</p>
                       </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Statutory Provisions</p>
+                        <p>{selectedOrder.metadata.statutoryProvisions || "-"}</p>
+                      </div>
                       <div className="col-span-2">
-                        <p className="text-sm font-medium text-muted-foreground">Flags</p>
+                        <p className="text-sm font-medium text-muted-foreground">Order Flags</p>
                         <div className="mt-2 flex flex-wrap gap-2">
                           {selectedOrder.metadata.isSummonsOrder && (
                             <Badge>Summons</Badge>
@@ -403,7 +440,7 @@ export default function Orders() {
                             <Badge>Notice</Badge>
                           )}
                           {selectedOrder.metadata.isFreshCaseAssignment && (
-                            <Badge>Fresh Case</Badge>
+                            <Badge className="bg-emerald-500">Fresh Case</Badge>
                           )}
                           {selectedOrder.metadata.isFinalOrder && (
                             <Badge>Final Order</Badge>
@@ -412,6 +449,13 @@ export default function Orders() {
                             <Badge className="bg-amber-500 text-amber-950">
                               Business Entity
                             </Badge>
+                          )}
+                          {!selectedOrder.metadata.isSummonsOrder && 
+                           !selectedOrder.metadata.isNoticeOrder && 
+                           !selectedOrder.metadata.isFreshCaseAssignment && 
+                           !selectedOrder.metadata.isFinalOrder && 
+                           !selectedOrder.metadata.hasBusinessEntity && (
+                            <span className="text-sm text-muted-foreground">No flags</span>
                           )}
                         </div>
                       </div>
