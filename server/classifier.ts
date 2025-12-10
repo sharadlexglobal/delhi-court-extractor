@@ -94,6 +94,8 @@ interface ClassificationResult {
     name: string;
     entityType: string;
     partyRole: "petitioner" | "respondent" | "third_party";
+    confidence: number;
+    indicators: string[];
   }>;
   personLeads: Array<{
     name: string;
@@ -157,8 +159,10 @@ Return a JSON object with the following fields:
   "businessEntities": [
     {
       "name": "Full business name as mentioned",
-      "entityType": "Pvt Ltd, LLP, Partnership, Sole Proprietor, Public Ltd, etc.",
-      "partyRole": "petitioner, respondent, or third_party"
+      "entityType": "pvt_ltd, ltd, llp, partnership, proprietorship, trust, society, huf, government",
+      "partyRole": "petitioner, respondent, or third_party",
+      "confidence": 0.0 to 1.0 (how confident you are this is a business),
+      "indicators": ["List of business patterns found e.g. 'Pvt Ltd suffix', 'Enterprises word', '& Sons pattern'"]
     }
   ],
   "personLeads": [
@@ -194,7 +198,43 @@ Return a JSON object with the following fields:
    - What the court decided or ordered
    - Who was present/absent
 
-4. **BUSINESS LEADS**: Extract company/firm names that could be leads for legal/business services.
+4. **ENHANCED BUSINESS ENTITY DETECTION** - Use these India-specific patterns:
+
+   ### EXPLICIT LEGAL SUFFIXES (100% business):
+   - Pvt Ltd, Private Limited, Ltd, Limited, LLP, OPC, Inc, Corporation, Corp, Co., Company
+
+   ### BUSINESS WORDS (95%+ business):
+   **Trade/Commerce:** Enterprises, Industries, Traders, Trading, Exports, Imports, Merchants, Suppliers, Distributors, Dealers
+   **Services:** Solutions, Services, Consultants, Consulting, Associates, Agencies, Advisors
+   **Manufacturing:** Manufacturing, Manufacturers, Works, Foundry, Mills, Factory, Pharma, Chemicals
+   **Construction:** Construction, Builders, Developers, Properties, Realty, Infra, Estate
+   **Retail:** Store, Stores, Mart, Emporium, Bazaar, Hotels, Restaurant, Caterers
+   **Tech:** Creations, Studios, Productions, Tech, Technologies, Infotech, Systems
+   **Finance:** Financiers, Finance, Credits, Investments, Securities
+   **Industries:** Jewellers, Textiles, Garments, Motors, Automobiles, Foods, Agro, Logistics, Transport
+
+   ### RELATIONSHIP PATTERNS (90%+ business):
+   - "& Sons", "& Brothers", "Bros", "& Co", "& Company", "& Associates", "& Partners"
+
+   ### REGIONAL NAMING PATTERNS:
+   - North India: [Family Name] + Business Word → "Agarwal Traders", "Gupta Enterprises"
+   - South India: Sri/Shri prefix → "Sri Lakshmi Industries", "Shri Balaji Enterprises"
+   - Gujarat/Rajasthan: "Patel Industries", "Shah & Co", "Jain Traders"
+   - Punjab/Haryana: "Singh Motors", "Dhillon Farms", "Gill Transport"
+   - Bengal/East: "Bose Brothers", "Ghosh Enterprises", "Das Trading"
+
+   ### REVERSE ENGINEERING - A name is BUSINESS if:
+   - Contains ANY business suffix/word from above
+   - Has unusual structure for personal name (numbers, special chars)
+   - Combines a name with a non-name word like "Enterprises", "Trading"
+   
+   ### A name is INDIVIDUAL if:
+   - Contains "S/o", "D/o", "W/o" (Son of, Daughter of, Wife of)
+   - Simple 2-3 word personal name without business indicators
+   - Has titles: Shri, Smt, Mr, Mrs, Ms, Dr
+
+   ### Entity Types to use:
+   - pvt_ltd, ltd, llp, partnership (& Sons, & Bros), proprietorship, trust, society, huf, government
 
 5. **PERSON LEADS**: For fresh cases, extract individual person names from respondent/defendant side as potential leads.
 
@@ -324,6 +364,26 @@ export async function classifyOrdersForJob(
             console.warn(`Skipping invalid entity in order ${order.id}`);
             continue;
           }
+          
+          const entityConfidence = typeof entity.confidence === 'number' ? entity.confidence : 0.85;
+          if (entityConfidence < 0.6) {
+            console.log(`Skipping low-confidence entity (${entityConfidence}): ${entity.name}`);
+            continue;
+          }
+          
+          const entityTypeMap: Record<string, string> = {
+            'pvt_ltd': 'Pvt Ltd',
+            'ltd': 'Public Ltd',
+            'llp': 'LLP',
+            'partnership': 'Partnership',
+            'proprietorship': 'Sole Proprietor',
+            'trust': 'Trust',
+            'society': 'Society',
+            'huf': 'HUF',
+            'government': 'Government',
+          };
+          const mappedEntityType = entityTypeMap[entity.entityType?.toLowerCase()] || entity.entityType || 'Unknown';
+          
           const normalizedName = normalizeEntityName(entity.name);
           
           const existingEntity = await storage.getBusinessEntityByNormalizedName(normalizedName);
@@ -332,20 +392,22 @@ export async function classifyOrdersForJob(
           if (existingEntity) {
             entityId = existingEntity.id;
           } else {
+            const indicators = Array.isArray(entity.indicators) ? entity.indicators : [];
             const newEntity = await storage.createBusinessEntity({
               name: entity.name,
               nameNormalized: normalizedName,
-              entityType: entity.entityType,
+              entityType: mappedEntityType,
               enrichmentStatus: "pending",
             });
             entityId = newEntity.id;
+            console.log(`[Business Lead] Created: ${entity.name} (${mappedEntityType}) - confidence: ${entityConfidence.toFixed(2)}, indicators: ${indicators.join(', ') || 'none'}`);
           }
 
           await storage.createCaseEntityLink({
             cnrOrderId: order.id,
             entityId: entityId,
             partyRole: entity.partyRole,
-            confidence: classification.classificationConfidence,
+            confidence: entityConfidence,
           });
         }
       }
