@@ -252,6 +252,18 @@ export async function registerRoutes(
     }
   });
 
+  // Get only downloaded PDFs
+  app.get("/api/pdfs", async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const pdfs = await storage.getDownloadedPdfs(limit);
+      res.json(pdfs);
+    } catch (error) {
+      console.error("Error fetching PDFs:", error);
+      res.status(500).json({ error: "Failed to fetch PDFs" });
+    }
+  });
+
   app.get("/api/orders/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);

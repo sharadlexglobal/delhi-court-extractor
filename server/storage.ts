@@ -75,6 +75,7 @@ export interface IStorage {
   getPendingOrders(limit?: number): Promise<CnrOrder[]>;
   getOrdersByIds(ids: number[]): Promise<CnrOrder[]>;
   updateOrderPdfPath(id: number, pdfPath: string, pdfSizeBytes: number): Promise<void>;
+  getDownloadedPdfs(limit?: number): Promise<(CnrOrder & { cnr?: Cnr })[]>;
   
   getAnalyticsOverview(): Promise<{
     totalCnrs: number;
@@ -476,6 +477,24 @@ export class DatabaseStorage implements IStorage {
       cnrsCount: Number(r.cnrsCount) || 0,
       ordersCount: Number(r.ordersCount) || 0,
       leadsCount: leadsMap.get(r.districtId) || 0,
+    }));
+  }
+
+  async getDownloadedPdfs(limit = 100): Promise<(CnrOrder & { cnr?: Cnr })[]> {
+    const results = await db
+      .select({
+        order: cnrOrders,
+        cnr: cnrs,
+      })
+      .from(cnrOrders)
+      .leftJoin(cnrs, eq(cnrOrders.cnrId, cnrs.id))
+      .where(eq(cnrOrders.pdfExists, true))
+      .orderBy(desc(cnrOrders.lastCheckedAt))
+      .limit(limit);
+
+    return results.map(r => ({
+      ...r.order,
+      cnr: r.cnr || undefined,
     }));
   }
 

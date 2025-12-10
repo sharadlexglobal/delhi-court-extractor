@@ -921,6 +921,99 @@ export default function CnrGenerator() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Downloaded PDFs Section */}
+      <DownloadedPdfsSection />
     </div>
+  );
+}
+
+// Downloaded PDFs Section Component
+function DownloadedPdfsSection() {
+  const { data: pdfs, isLoading } = useQuery<Array<{
+    id: number;
+    cnrId: number;
+    orderNo: number;
+    orderDate: string;
+    pdfPath: string | null;
+    pdfSizeBytes: number | null;
+    lastCheckedAt: string | null;
+    cnr?: { cnr: string };
+  }>>({
+    queryKey: ["/api/pdfs?limit=50"],
+    refetchInterval: 10000,
+  });
+
+  if (isLoading) {
+    return (
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="text-lg font-semibold">Downloaded PDFs</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="mt-6">
+      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-4">
+        <CardTitle className="text-lg font-semibold">
+          Downloaded PDFs
+        </CardTitle>
+        <Badge variant="secondary">
+          {pdfs?.length ?? 0} PDFs
+        </Badge>
+      </CardHeader>
+      <CardContent>
+        {pdfs && pdfs.length > 0 ? (
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {pdfs.map((pdf) => (
+              <div
+                key={pdf.id}
+                className="flex items-center justify-between gap-2 p-3 rounded-md bg-muted/50"
+                data-testid={`pdf-row-${pdf.id}`}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="font-mono text-sm truncate">
+                    {pdf.cnr?.cnr || `CNR #${pdf.cnrId}`}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Order #{pdf.orderNo} - {pdf.orderDate}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs">
+                    {pdf.pdfSizeBytes ? `${Math.round(pdf.pdfSizeBytes / 1024)} KB` : "N/A"}
+                  </Badge>
+                  {pdf.pdfPath && (
+                    <a
+                      href={pdf.pdfPath}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex"
+                      data-testid={`pdf-download-${pdf.id}`}
+                    >
+                      <Button size="sm" variant="outline">
+                        <Download className="h-3 w-3 mr-1" />
+                        View
+                      </Button>
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            No PDFs downloaded yet. Generate CNRs, create order URLs, and download PDFs to see them here.
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
