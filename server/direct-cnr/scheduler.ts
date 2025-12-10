@@ -13,24 +13,75 @@ const MONITORING_DURATION_DAYS = 30;
 export async function createMonitoringSchedule(
   caseId: number,
   hearingDate: Date
-): Promise<DirectCnrMonitoring> {
+): Promise<DirectCnrMonitoring | null> {
+  const triggerDateStr = formatDateForDb(hearingDate);
+  
   const startDate = new Date(hearingDate);
   startDate.setDate(startDate.getDate() + 1);
 
   const endDate = new Date(hearingDate);
   endDate.setDate(endDate.getDate() + MONITORING_DURATION_DAYS);
 
+  // Check if ACTIVE schedule already exists for this case and trigger date
+  const existingActiveSchedule = await db.select()
+    .from(directCnrMonitoring)
+    .where(
+      and(
+        eq(directCnrMonitoring.caseId, caseId),
+        eq(directCnrMonitoring.triggerDate, triggerDateStr),
+        eq(directCnrMonitoring.isActive, true)
+      )
+    )
+    .limit(1);
+
+  if (existingActiveSchedule.length > 0) {
+    console.log(`[Scheduler] Active schedule already exists for case ${caseId} with trigger date ${triggerDateStr}`);
+    return existingActiveSchedule[0];
+  }
+
+  // Check if inactive schedule exists - reactivate it instead of creating duplicate
+  const existingInactiveSchedule = await db.select()
+    .from(directCnrMonitoring)
+    .where(
+      and(
+        eq(directCnrMonitoring.caseId, caseId),
+        eq(directCnrMonitoring.triggerDate, triggerDateStr),
+        eq(directCnrMonitoring.isActive, false)
+      )
+    )
+    .limit(1);
+
+  if (existingInactiveSchedule.length > 0) {
+    // Reactivate the schedule with fresh dates and reset counters
+    const [reactivated] = await db.update(directCnrMonitoring)
+      .set({
+        startMonitoringDate: formatDateForDb(startDate),
+        endMonitoringDate: formatDateForDb(endDate),
+        isActive: true,
+        orderFound: false,
+        foundOrderId: null,
+        totalChecks: 0,
+        lastCheckAt: null
+      })
+      .where(eq(directCnrMonitoring.id, existingInactiveSchedule[0].id))
+      .returning();
+    
+    console.log(`[Scheduler] Reactivated existing schedule for case ${caseId}: ${formatDateForDb(startDate)} to ${formatDateForDb(endDate)}`);
+    return reactivated;
+  }
+
+  // No existing schedule, create new one
   const [schedule] = await db.insert(directCnrMonitoring)
     .values({
       caseId,
-      triggerDate: formatDateForDb(hearingDate),
+      triggerDate: triggerDateStr,
       startMonitoringDate: formatDateForDb(startDate),
       endMonitoringDate: formatDateForDb(endDate),
       isActive: true
     })
     .returning();
 
-  console.log(`[Scheduler] Created monitoring schedule for case ${caseId}: ${formatDateForDb(startDate)} to ${formatDateForDb(endDate)}`);
+  console.log(`[Scheduler] Created NEW monitoring schedule for case ${caseId}: ${formatDateForDb(startDate)} to ${formatDateForDb(endDate)}`);
 
   return schedule;
 }
@@ -123,6 +174,8 @@ export async function checkForNewOrders(scheduleId: number): Promise<{
       await classifyAllOrdersForCase(caseRecord.id);
 
       const firstNewOrder = createdOrders[0];
+      
+      // Mark current schedule as complete (order found, stop searching)
       await db.update(directCnrMonitoring)
         .set({
           orderFound: true,
@@ -131,6 +184,29 @@ export async function checkForNewOrders(scheduleId: number): Promise<{
           lastCheckAt: new Date()
         })
         .where(eq(directCnrMonitoring.id, scheduleId));
+
+      console.log(`[Scheduler] Order found! Stopped monitoring for schedule ${scheduleId}`);
+
+      // Get updated next hearing date from case details and create new schedule
+      const newNextHearingDate = caseDetails.caseStatus?.nextHearingDate;
+      if (newNextHearingDate) {
+        const parsedNextDate = parseOrderDate(newNextHearingDate);
+        if (parsedNextDate) {
+          // Update case with new next hearing date
+          await db.update(directCnrCases)
+            .set({ 
+              nextHearingDate: formatDateForDb(parsedNextDate),
+              updatedAt: new Date()
+            })
+            .where(eq(directCnrCases.id, caseRecord.id));
+
+          // Create new monitoring schedule from next hearing date
+          const newSchedule = await createMonitoringSchedule(caseRecord.id, parsedNextDate);
+          if (newSchedule) {
+            console.log(`[Scheduler] Created new monitoring schedule from next hearing date: ${newNextHearingDate}`);
+          }
+        }
+      }
     }
 
     return { newOrdersFound: createdOrders.length, processed: true };
