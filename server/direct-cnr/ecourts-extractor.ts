@@ -95,9 +95,9 @@ async function solveCaptcha(captchaImageBytes: Buffer): Promise<string> {
 async function parseECourtsPage(page: Page, cnr: string): Promise<CaseDetails> {
   const caseData = await page.evaluate(() => {
     const data: Record<string, string> = {};
-    const tables = document.querySelectorAll('table');
+    const tables = Array.from(document.querySelectorAll('table'));
     for (const table of tables) {
-      const rows = table.querySelectorAll('tr');
+      const rows = Array.from(table.querySelectorAll('tr'));
       for (const row of rows) {
         const cells = row.querySelectorAll('td');
         if (cells.length >= 2) {
@@ -195,58 +195,96 @@ async function parseECourtsPage(page: Page, cnr: string): Promise<CaseDetails> {
     let respondentAdvocate: string | null = null;
     const debugInfo: string[] = [];
 
-    const tables = Array.from(document.querySelectorAll('table'));
-    debugInfo.push(`Total tables on page: ${tables.length}`);
-    
-    for (let i = 0; i < tables.length; i++) {
-      const table = tables[i];
-      const text = (table.textContent || '').substring(0, 200);
-      debugInfo.push(`Table ${i}: "${text.replace(/\s+/g, ' ').substring(0, 80)}..."`);
-    }
-    
-    const bodyText = document.body?.textContent || '';
-    const hasPetitioner = bodyText.includes('Petitioner');
-    const hasRespondent = bodyText.includes('Respondent');
-    debugInfo.push(`Body has Petitioner: ${hasPetitioner}, Respondent: ${hasRespondent}`);
-    
-    for (const table of tables) {
-      const text = table.textContent || '';
-      if (text.includes('Petitioner') || text.includes('Respondent')) {
-        debugInfo.push(`Found party table with ${table.querySelectorAll('tr').length} rows`);
-        const rows = Array.from(table.querySelectorAll('tr'));
-        rows.forEach((row: HTMLTableRowElement, rowIndex: number) => {
-          const cells = row.querySelectorAll('td');
-          const ths = row.querySelectorAll('th');
-          if (cells.length >= 2) {
-            const label = cells[0]?.textContent?.trim().toLowerCase() || '';
-            const value = cells[1]?.textContent?.trim() || '';
-            debugInfo.push(`Row ${rowIndex}: label="${label.substring(0, 50)}", value="${value.substring(0, 50)}"`);
-            if (label.includes('petitioner') && !label.includes('advocate')) {
-              petitionerName = value;
-            } else if (label.includes('petitioner') && label.includes('advocate')) {
-              petitionerAdvocate = value;
-            } else if (label.includes('respondent') && !label.includes('advocate')) {
-              respondentName = value;
-            } else if (label.includes('respondent') && label.includes('advocate')) {
-              respondentAdvocate = value;
+    const allElements = Array.from(document.querySelectorAll('*'));
+    for (const el of allElements) {
+      const text = el.textContent?.trim() || '';
+      if (text.startsWith('Petitioner and Advocate') || text.startsWith('Petitioner/Applicant')) {
+        const nextTable = el.nextElementSibling?.tagName === 'TABLE' ? el.nextElementSibling : 
+                         el.parentElement?.querySelector('table');
+        if (nextTable) {
+          const rows = Array.from(nextTable.querySelectorAll('tr'));
+          const names: string[] = [];
+          const advocates: string[] = [];
+          rows.forEach((row: Element) => {
+            const cells = row.querySelectorAll('td');
+            if (cells.length >= 1) {
+              const cellText = cells[0]?.textContent?.trim() || '';
+              if (cellText.match(/^\d+\)/)) {
+                names.push(cellText.replace(/^\d+\)\s*/, ''));
+              }
             }
-          } else if (ths.length >= 1) {
-            const thText = ths[0]?.textContent?.trim() || '';
-            const tdText = cells[0]?.textContent?.trim() || '';
-            debugInfo.push(`Row ${rowIndex} (th/td): th="${thText.substring(0, 30)}", td="${tdText.substring(0, 50)}"`);
-            if (thText.toLowerCase().includes('petitioner') && !thText.toLowerCase().includes('advocate')) {
-              petitionerName = tdText;
-            } else if (thText.toLowerCase().includes('petitioner') && thText.toLowerCase().includes('advocate')) {
-              petitionerAdvocate = tdText;
-            } else if (thText.toLowerCase().includes('respondent') && !thText.toLowerCase().includes('advocate')) {
-              respondentName = tdText;
-            } else if (thText.toLowerCase().includes('respondent') && thText.toLowerCase().includes('advocate')) {
-              respondentAdvocate = tdText;
+            if (cells.length >= 2) {
+              const advText = cells[1]?.textContent?.trim() || '';
+              if (advText) advocates.push(advText);
             }
-          }
-        });
+          });
+          if (names.length > 0) petitionerName = names.join(', ');
+          if (advocates.length > 0) petitionerAdvocate = advocates.join(', ');
+          debugInfo.push(`Found petitioner: ${petitionerName?.substring(0, 50)}`);
+        }
+      }
+      if (text.startsWith('Respondent and Advocate') || text.startsWith('Respondent/Opposite')) {
+        const nextTable = el.nextElementSibling?.tagName === 'TABLE' ? el.nextElementSibling : 
+                         el.parentElement?.querySelector('table');
+        if (nextTable) {
+          const rows = Array.from(nextTable.querySelectorAll('tr'));
+          const names: string[] = [];
+          const advocates: string[] = [];
+          rows.forEach((row: Element) => {
+            const cells = row.querySelectorAll('td');
+            if (cells.length >= 1) {
+              const cellText = cells[0]?.textContent?.trim() || '';
+              if (cellText.match(/^\d+\)/)) {
+                names.push(cellText.replace(/^\d+\)\s*/, ''));
+              }
+            }
+            if (cells.length >= 2) {
+              const advText = cells[1]?.textContent?.trim() || '';
+              if (advText) advocates.push(advText);
+            }
+          });
+          if (names.length > 0) respondentName = names.join(', ');
+          if (advocates.length > 0) respondentAdvocate = advocates.join(', ');
+          debugInfo.push(`Found respondent: ${respondentName?.substring(0, 50)}`);
+        }
       }
     }
+    
+    if (!petitionerName || !respondentName) {
+      const tables = Array.from(document.querySelectorAll('table'));
+      for (let i = 0; i < tables.length; i++) {
+        const table = tables[i];
+        const firstCell = table.querySelector('td')?.textContent?.trim() || '';
+        if (firstCell.match(/^1\)/) && !petitionerName) {
+          const prevEl = table.previousElementSibling;
+          const prevText = prevEl?.textContent?.toLowerCase() || '';
+          if (prevText.includes('petitioner') || i === 2) {
+            const names: string[] = [];
+            table.querySelectorAll('tr').forEach((row: Element) => {
+              const cell = row.querySelector('td');
+              const text = cell?.textContent?.trim() || '';
+              if (text.match(/^\d+\)/)) names.push(text.replace(/^\d+\)\s*/, ''));
+            });
+            if (names.length > 0) {
+              petitionerName = names.join(', ');
+              debugInfo.push(`Table ${i} petitioner: ${petitionerName?.substring(0, 50)}`);
+            }
+          } else if (prevText.includes('respondent') || i === 3) {
+            const names: string[] = [];
+            table.querySelectorAll('tr').forEach((row: Element) => {
+              const cell = row.querySelector('td');
+              const text = cell?.textContent?.trim() || '';
+              if (text.match(/^\d+\)/)) names.push(text.replace(/^\d+\)\s*/, ''));
+            });
+            if (names.length > 0) {
+              respondentName = names.join(', ');
+              debugInfo.push(`Table ${i} respondent: ${respondentName?.substring(0, 50)}`);
+            }
+          }
+        }
+      }
+    }
+
     return {
       petitioner: { name: petitionerName, advocate: petitionerAdvocate },
       respondent: { name: respondentName, advocate: respondentAdvocate },
