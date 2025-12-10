@@ -67,6 +67,7 @@ interface ClassificationResult {
   caseTitle: string | null;
   caseNumber: string | null;
   caseType: string | null;
+  caseCategory: string | null;
   filingDate: string | null;
   petitionerNames: string | null;
   respondentNames: string | null;
@@ -76,6 +77,7 @@ interface ClassificationResult {
   courtName: string | null;
   courtDesignation: string | null;
   statutoryProvisions: string | null;
+  statutoryActName: string | null;
   orderType: string | null;
   orderSummary: string | null;
   operativePortion: string | null;
@@ -101,29 +103,51 @@ interface ClassificationResult {
   freshCasePhrase: string | null;
 }
 
-const CLASSIFICATION_PROMPT = `You are a legal document analyzer specializing in Indian court orders. Analyze the following court order text and extract structured information.
+const CLASSIFICATION_PROMPT = `You are a legal document analyzer specializing in Indian court orders from Delhi District Courts. Analyze the following court order text and extract structured information.
+
+## DELHI COURTS CASE TYPE ABBREVIATIONS REFERENCE:
+- MACT = Motor Accident Claims Tribunal (under Motor Vehicles Act, 1988)
+- NI Act / Section 138 = Negotiable Instruments Act, 1881 (cheque bounce cases)
+- IPC = Indian Penal Code, 1860 (criminal cases)
+- CPC = Code of Civil Procedure, 1908 (civil procedure)
+- CrPC = Code of Criminal Procedure, 1973 (criminal procedure)
+- POCSO = Protection of Children from Sexual Offences Act, 2012
+- NDPS = Narcotic Drugs and Psychotropic Substances Act, 1985
+- SC/ST Act = Scheduled Castes and Scheduled Tribes (Prevention of Atrocities) Act, 1989
+- DV Act = Protection of Women from Domestic Violence Act, 2005
+- FAO = First Appeal from Order
+- RCA = Regular Civil Appeal
+- CS = Civil Suit
+- CC = Criminal Case / Calendar Case
+- ARB = Arbitration & Conciliation Act
+- IA = Interlocutory Application
+- EA = Execution Application
+- Section 125 CrPC = Maintenance applications
+- Section 156(3) CrPC = Directing police to investigate
 
 Return a JSON object with the following fields:
 {
-  "caseTitle": "Full case title (e.g., 'ABC Pvt Ltd vs XYZ Company')",
-  "caseNumber": "Case number if found",
-  "caseType": "Type of case (civil, criminal, commercial, etc.)",
+  "caseTitle": "Full case title (e.g., 'Ashok Kumar Vs. Keshav')",
+  "caseNumber": "Case number (e.g., '1156/2025', 'Bail Matter No. 4276/2025')",
+  "caseType": "Type of case (civil, criminal, commercial, motor_accident, cheque_bounce, family, etc.)",
+  "caseCategory": "Category from: MACT, NI_ACT, IPC, CPC, CrPC, POCSO, NDPS, DV_ACT, ARBITRATION, EXECUTION, MAINTENANCE, OTHER",
   "filingDate": "Filing date in YYYY-MM-DD format if found",
   "petitionerNames": "Names of petitioners/plaintiffs separated by commas",
   "respondentNames": "Names of respondents/defendants separated by commas",
   "petitionerAdvocates": "Advocates for petitioners",
   "respondentAdvocates": "Advocates for respondents",
   "judgeName": "Name of the judge",
-  "courtName": "Name of the court",
-  "courtDesignation": "Court designation (e.g., District Judge, Additional Sessions Judge)",
-  "statutoryProvisions": "Legal provisions/sections mentioned",
-  "orderType": "Type of order (interim, final, adjournment, summons, notice, etc.)",
-  "orderSummary": "Brief summary of the order in 2-3 sentences",
-  "operativePortion": "Key operative directions from the order",
+  "courtName": "Name of the court (e.g., 'MACT-01, West/THC/Delhi')",
+  "courtDesignation": "Court designation (e.g., 'District Judge', 'Additional Sessions Judge', 'DJ-cum-PO')",
+  "statutoryProvisions": "Legal provisions/sections mentioned (e.g., 'Section 138 NI Act', 'Section 302 IPC')",
+  "statutoryActName": "Full statutory act name with abbreviation (e.g., 'MACT - Motor Accident Claims Tribunal under Motor Vehicles Act, 1988', 'NI Act - Negotiable Instruments Act, 1881 (Section 138 - Cheque Dishonour)')",
+  "orderType": "Type of order (interim, final, adjournment, summons, notice, bail, registration, etc.)",
+  "orderSummary": "Brief summary in 2-3 sentences explaining what happened in the order and what the court decided",
+  "operativePortion": "Key operative directions from the order (what the court ordered to be done)",
   "nextHearingDate": "Next hearing date in YYYY-MM-DD format if mentioned",
   "isSummonsOrder": true if this order issues summons to any party,
   "isNoticeOrder": true if this order issues notice to any party,
-  "isFreshCaseAssignment": true if this is initial case assignment/filing,
+  "isFreshCaseAssignment": true if this appears to be a new case registration/assignment,
   "isFirstHearing": true if this appears to be the first hearing,
   "isFinalOrder": true if this is a final judgment/decree,
   "hasBusinessEntity": true if any business entities (companies, firms, LLPs) are mentioned,
@@ -143,16 +167,35 @@ Return a JSON object with the following fields:
       "address": "Address if mentioned in the order, otherwise null"
     }
   ],
-  "freshCasePhrase": "Exact phrase if found, like 'fresh case received, it be checked and registered' or similar"
+  "freshCasePhrase": "Exact phrase that indicates fresh case assignment"
 }
 
-Focus on identifying:
-1. Business entities that could be potential leads (companies facing legal issues)
-2. Summons and notice orders (these indicate active litigation opportunities)
-3. Recovery/money suits (potential for debt collection services)
-4. Fresh case assignments (new business opportunities)
-5. IMPORTANT: Look for phrases like "fresh case received, it be checked and registered" which indicate new case assignments - set isFreshCaseAssignment to true and capture the exact phrase in freshCasePhrase
-6. When isFreshCaseAssignment is true, extract individual PERSON names (NOT businesses) from respondent/defendant parties as personLeads - these are potential leads for legal services
+## CRITICAL RULES:
+
+1. **FRESH CASE DETECTION**: Set isFreshCaseAssignment=true if the order contains phrases SIMILAR IN MEANING to:
+   - "fresh case received, it be checked and registered"
+   - "case received and registered"
+   - "FAR received, it be checked and registered"
+   - "new case filed"
+   - "case is registered"
+   - "matter is registered"
+   Capture the EXACT phrase found in freshCasePhrase field.
+
+2. **STATUTORY ACT IDENTIFICATION**: Based on court name and order content, identify the applicable statutory act:
+   - If court mentions "MACT" → "MACT - Motor Accident Claims Tribunal under Motor Vehicles Act, 1988"
+   - If mentions Section 138 or cheque → "NI Act - Negotiable Instruments Act, 1881 (Section 138 - Cheque Dishonour)"
+   - If criminal case with IPC sections → "IPC - Indian Penal Code, 1860"
+   - If maintenance case → "CrPC - Code of Criminal Procedure, 1973 (Section 125 - Maintenance)"
+
+3. **ORDER SUMMARY**: Write a clear, readable summary explaining:
+   - What type of case this is
+   - What happened in this order
+   - What the court decided or ordered
+   - Who was present/absent
+
+4. **BUSINESS LEADS**: Extract company/firm names that could be leads for legal/business services.
+
+5. **PERSON LEADS**: For fresh cases, extract individual person names from respondent/defendant side as potential leads.
 
 If a field is not found in the text, use null for strings, false for booleans, and empty array [] for arrays.`;
 
@@ -245,6 +288,7 @@ export async function classifyOrdersForJob(
         caseTitle: classification.caseTitle,
         caseNumber: classification.caseNumber,
         caseType: classification.caseType,
+        caseCategory: classification.caseCategory,
         filingDate: classification.filingDate,
         petitionerNames: classification.petitionerNames,
         respondentNames: classification.respondentNames,
@@ -254,8 +298,10 @@ export async function classifyOrdersForJob(
         courtName: classification.courtName,
         courtDesignation: classification.courtDesignation,
         statutoryProvisions: classification.statutoryProvisions,
+        statutoryActName: classification.statutoryActName,
         orderType: classification.orderType,
         orderSummary: classification.orderSummary,
+        freshCasePhrase: classification.freshCasePhrase,
         operativePortion: classification.operativePortion,
         nextHearingDate: classification.nextHearingDate,
         isSummonsOrder: classification.isSummonsOrder,
