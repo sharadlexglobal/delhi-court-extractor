@@ -15,12 +15,16 @@ export function generateOrderUrl(params: OrderUrlParams): { url: string; encoded
   const { cnr, orderNo, orderDate, baseUrl } = params;
   
   const [day, month, year] = orderDate.split(/[-\/]/);
-  const formattedDate = `${day.padStart(2, '0')}-${month.padStart(2, '0')}-${year}`;
+  const formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   
-  const payload = `${cnr}~${orderNo}~${formattedDate}`;
-  const encodedPayload = Buffer.from(payload).toString('base64');
+  const payloadObj = {
+    cino: cnr,
+    order_no: orderNo,
+    order_date: formattedDate
+  };
+  const encodedPayload = Buffer.from(JSON.stringify(payloadObj)).toString('base64');
   
-  const url = `${baseUrl}/orderDetailsPdf?orderPayload=${encodeURIComponent(encodedPayload)}`;
+  const url = `${baseUrl}/wp-admin/admin-ajax.php?es_ajax_request=1&action=get_order_pdf&input_strings=${encodeURIComponent(encodedPayload)}`;
   
   return { url, encodedPayload };
 }
@@ -34,12 +38,16 @@ export function generateOrderUrlFromComponents(
   const day = orderDate.getDate().toString().padStart(2, '0');
   const month = (orderDate.getMonth() + 1).toString().padStart(2, '0');
   const year = orderDate.getFullYear();
-  const formattedDate = `${day}-${month}-${year}`;
+  const formattedDate = `${year}-${month}-${day}`;
   
-  const payload = `${cnr}~${orderNo}~${formattedDate}`;
-  const encodedPayload = Buffer.from(payload).toString('base64');
+  const payloadObj = {
+    cino: cnr,
+    order_no: orderNo,
+    order_date: formattedDate
+  };
+  const encodedPayload = Buffer.from(JSON.stringify(payloadObj)).toString('base64');
   
-  const url = `${districtBaseUrl}/orderDetailsPdf?orderPayload=${encodeURIComponent(encodedPayload)}`;
+  const url = `${districtBaseUrl}/wp-admin/admin-ajax.php?es_ajax_request=1&action=get_order_pdf&input_strings=${encodeURIComponent(encodedPayload)}`;
   
   return { url, encodedPayload };
 }

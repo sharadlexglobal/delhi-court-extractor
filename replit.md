@@ -195,3 +195,121 @@ CNR Number, District, Case Category, Case Title, Case Number, Case Type, Statuto
 - statutoryActName: "MACT - Motor Accident Claims Tribunal under Motor Vehicles Act, 1988"
 - caseCategory: "MACT"
 - freshCasePhrase: "FAR received. It be checked and registered"
+
+---
+
+## Direct CNR Workflow (Single Case Management)
+
+### Overview
+A separate namespace workflow for managing individual cases with advocate assignment, eCourts integration, and 30-day monitoring.
+
+### Files Structure
+- `server/direct-cnr/routes.ts` - API endpoints
+- `server/direct-cnr/ecourts-extractor.ts` - Playwright-based eCourts scraper
+- `server/direct-cnr/pdf-downloader.ts` - ZenRows PDF download
+- `server/direct-cnr/classifier.ts` - GPT-4o classification with advocate notes
+- `server/direct-cnr/case-manager.ts` - Case lifecycle management
+- `client/src/pages/direct-cnr.tsx` - Frontend UI
+
+### Database Tables (Isolated Namespace)
+- `direct_cnr_advocates` - Advocate profiles
+- `direct_cnr_cases` - Case records with full eCourts data
+- `direct_cnr_orders` - Orders with PDF/text/classification status
+- `direct_cnr_order_summaries` - AI-generated summaries
+- `direct_cnr_monitoring_schedules` - 30-day monitoring triggers
+
+### eCourts Extractor (VERIFIED Dec 10, 2025)
+
+**CAPTCHA Solving:**
+- Uses GPT-4o with screenshot image
+- Preserves case-sensitivity (alphanumeric chars)
+- 5 retry attempts with fresh CAPTCHA each time
+
+**Data Extraction (DOM-based, not JSON):**
+- Case Type, Filing Number, Registration Number
+- First Hearing Date, Next Hearing Date, Case Stage
+- Court Name and Judge
+- Petitioner Name & Advocate (from Table 2)
+- Respondent Name & Advocate (from Table 3)
+- Interim Orders (from Table 8) with Order Number, Date, Details
+
+**Date Parsing:**
+- Supports DD-MM-YYYY format (e.g., "04-12-2025")
+- Supports text format (e.g., "04th December 2025")
+- Converts to YYYY-MM-DD for PostgreSQL date columns
+
+**Verified Test Case (Dec 10, 2025):**
+- CNR: DLWT010127552025
+- Case Type: SC - SESSIONS CASE
+- Parties: STATE vs ARJUN
+- Filing: 4288/2025, Registration: 655/2025
+- Next Hearing: 09-03-2026
+- Stage: Charge
+- Orders Found: 1 (dated 04-12-2025)
+
+### PDF Download & Storage Flow
+
+**Step 1: PDF Download**
+- Uses ZenRows API with India proxy (`proxy_country: 'in'`)
+- Premium proxy + JS rendering for court websites
+- Validates PDF header (`%PDF-`)
+
+**Step 2: Object Storage**
+- PDF saved to Replit Object Storage via `ObjectStorageService.storePdf()`
+- Path format: `direct-cnr/pdfs/{cnr}_order_{orderNo}.pdf`
+- Database updated: `pdfExists: true`, `pdfPath: <storage_path>`
+
+**Step 3: Text Extraction**
+- Uses `pdf-parse` library to extract text from PDF
+- Text stored in `direct_cnr_orders.extractedText` (or separate table)
+- Database updated: `textExtracted: true`
+
+**Step 4: AI Classification**
+- Uses GPT-4o for order analysis
+- Generates:
+  - Case Category (MACT, NI_ACT, IPC, etc.)
+  - Order Type (registration, adjournment, final, etc.)
+  - Order Summary (what happened)
+  - Advocate Preparation Notes
+  - Action Items (JSON array)
+  - Next Hearing Date
+
+**Step 5: Summary Storage**
+- Summary saved to `direct_cnr_order_summaries` table
+- Links to order via `orderId`
+- Database updated: `classificationDone: true`, `summaryGenerated: true`
+
+### Frontend Display
+
+**Case Details Section:**
+- Case Type, Filing/Registration Numbers
+- First/Next Hearing Dates, Case Stage
+- Court Name
+- Petitioner/Respondent with Advocates
+
+**Orders & AI Summaries (Accordion):**
+- Each order shown with status icons (PDF, Text, Classified)
+- Expandable to show:
+  - Case Category Badge
+  - Order Type Badge
+  - Summary text
+  - Advocate Preparation Notes (highlighted box)
+  - Action Items (list with icons)
+  - Next Hearing Date
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/direct-cnr/cases` | Register new case by CNR |
+| GET | `/api/direct-cnr/cases` | List all cases |
+| GET | `/api/direct-cnr/cases/:id` | Get case with orders |
+| POST | `/api/direct-cnr/cases/:id/extract` | Extract from eCourts |
+| POST | `/api/direct-cnr/cases/:id/process` | Download PDFs + Extract + Classify |
+| GET | `/api/direct-cnr/advocates` | List advocates |
+| POST | `/api/direct-cnr/advocates` | Create advocate |
+
+### Rate Limiting
+- General: 60 requests/minute
+- Heavy operations (eCourts, PDF download): 5 requests/minute
+- Isolated counters per operation type

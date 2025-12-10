@@ -1,6 +1,4 @@
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
+import { Mistral } from "@mistralai/mistralai";
 import { db } from '../db';
 import { directCnrOrders, directCnrPdfTexts } from '@shared/schema';
 import { eq } from 'drizzle-orm';
@@ -31,13 +29,36 @@ function countWords(text: string): number {
 }
 
 export async function extractTextFromPdf(pdfBuffer: Buffer): Promise<TextExtractionResult> {
-  try {
-    const data = await pdfParse(pdfBuffer);
+  const apiKey = process.env.MISTRAL_API_KEY;
+  
+  if (!apiKey) {
+    console.error('[DirectCNR-TextExtractor] MISTRAL_API_KEY is not configured');
+    return { success: false, error: 'MISTRAL_API_KEY is not configured' };
+  }
 
-    const rawText = data.text;
+  try {
+    const base64Pdf = pdfBuffer.toString("base64");
+    console.log(`[DirectCNR-TextExtractor] Processing PDF (${pdfBuffer.length} bytes) with Mistral OCR`);
+    
+    const client = new Mistral({ apiKey });
+    
+    const ocrResponse = await client.ocr.process({
+      model: "mistral-ocr-latest",
+      document: {
+        type: "document_url",
+        documentUrl: `data:application/pdf;base64,${base64Pdf}`,
+      },
+      includeImageBase64: false,
+    });
+
+    const pages = ocrResponse.pages || [];
+    const pageCount = pages.length;
+    
+    const rawText = pages.map((page: any) => page.markdown || "").join("\n\n");
     const cleanedText = cleanText(rawText);
-    const pageCount = data.numpages;
     const wordCount = countWords(cleanedText);
+
+    console.log(`[DirectCNR-TextExtractor] Extracted ${pageCount} pages, ${wordCount} words`);
 
     return {
       success: true,
