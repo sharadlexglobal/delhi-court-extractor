@@ -1,18 +1,21 @@
 import { db } from "./db";
 import { districts } from "@shared/schema";
 
+// VERIFIED CORRECT MAPPINGS based on actual CNR format (DL + code_prefix + establishment + serial + year)
+// Example: DLWT010127152025 = DL + WT + 01 + 0127152 + 025
+// Domains verified working via ZenRows with India proxy
 const delhiDistricts = [
-  { name: "Central Delhi", codePrefix: "CE", establishmentCode: "01", baseUrl: "https://centraldelhi.dcourts.gov.in" },
-  { name: "East Delhi", codePrefix: "EA", establishmentCode: "01", baseUrl: "https://eastdelhi.dcourts.gov.in" },
-  { name: "New Delhi", codePrefix: "ND", establishmentCode: "01", baseUrl: "https://newdelhi.dcourts.gov.in" },
-  { name: "North Delhi", codePrefix: "NO", establishmentCode: "01", baseUrl: "https://northdelhi.dcourts.gov.in" },
+  { name: "Central Delhi", codePrefix: "CT", establishmentCode: "01", baseUrl: "https://centraldelhi.dcourts.gov.in" },
+  { name: "East Delhi", codePrefix: "ET", establishmentCode: "01", baseUrl: "https://eastdelhi.dcourts.gov.in" },
+  { name: "New Delhi", codePrefix: "ND", establishmentCode: "01", baseUrl: "https://newdelhidc.dcourts.gov.in" },
+  { name: "North Delhi", codePrefix: "NT", establishmentCode: "01", baseUrl: "https://northdelhi.dcourts.gov.in" },
   { name: "North East Delhi", codePrefix: "NE", establishmentCode: "01", baseUrl: "https://northeastdelhi.dcourts.gov.in" },
-  { name: "North West Delhi", codePrefix: "NW", establishmentCode: "01", baseUrl: "https://northwestdelhi.dcourts.gov.in" },
+  { name: "North West Delhi", codePrefix: "NW", establishmentCode: "01", baseUrl: "https://rohini.dcourts.gov.in" },
   { name: "Shahdara Delhi", codePrefix: "SH", establishmentCode: "01", baseUrl: "https://shahdara.dcourts.gov.in" },
-  { name: "South Delhi", codePrefix: "SO", establishmentCode: "01", baseUrl: "https://southdelhi.dcourts.gov.in" },
+  { name: "South Delhi", codePrefix: "ST", establishmentCode: "01", baseUrl: "https://southdelhi.dcourts.gov.in" },
   { name: "South East Delhi", codePrefix: "SE", establishmentCode: "01", baseUrl: "https://southeastdelhi.dcourts.gov.in" },
   { name: "South West Delhi", codePrefix: "SW", establishmentCode: "01", baseUrl: "https://southwestdelhi.dcourts.gov.in" },
-  { name: "West Delhi", codePrefix: "WE", establishmentCode: "01", baseUrl: "https://westdelhi.dcourts.gov.in" },
+  { name: "West Delhi", codePrefix: "WT", establishmentCode: "01", baseUrl: "https://westdelhi.dcourts.gov.in" },
 ];
 
 export async function seedDistricts(): Promise<{ added: number; skipped: number }> {

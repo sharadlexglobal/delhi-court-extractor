@@ -40,6 +40,25 @@ Preferred communication style: Simple, everyday language.
   - `entity_contacts`: Contact information for leads
   - `processing_jobs`: Background job tracking
 
+### Delhi District Court Mappings (VERIFIED Dec 10, 2025)
+
+CNR Format: `DL` + `code_prefix` + `establishment_code` + `serial_number(7 digits)` + `year(3 digits)`
+Example: DLWT010127152025 = DL + WT + 01 + 0127152 + 025
+
+| District | CNR Prefix | Code | Domain |
+|----------|------------|------|--------|
+| Central Delhi | DLCT | CT | centraldelhi.dcourts.gov.in |
+| East Delhi | DLET | ET | eastdelhi.dcourts.gov.in |
+| New Delhi | DLND | ND | newdelhidc.dcourts.gov.in |
+| North Delhi | DLNT | NT | northdelhi.dcourts.gov.in |
+| North East Delhi | DLNE | NE | northeastdelhi.dcourts.gov.in |
+| North West Delhi | DLNW | NW | rohini.dcourts.gov.in |
+| Shahdara | DLSH | SH | shahdara.dcourts.gov.in |
+| South Delhi | DLST | ST | southdelhi.dcourts.gov.in |
+| South East Delhi | DLSE | SE | southeastdelhi.dcourts.gov.in |
+| South West Delhi | DLSW | SW | southwestdelhi.dcourts.gov.in |
+| West Delhi | DLWT | WT | westdelhi.dcourts.gov.in |
+
 ### Key Design Decisions
 
 1. **Monorepo Structure**: Client, server, and shared code in single repository with path aliases (`@/`, `@shared/`)
