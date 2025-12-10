@@ -291,6 +291,266 @@ export type CaseEntityLink = typeof caseEntityLinks.$inferSelect;
 export type ProcessingJob = typeof processingJobs.$inferSelect;
 export type PersonLead = typeof personLeads.$inferSelect;
 
+// ============================================================================
+// DIRECT CNR MANAGEMENT SYSTEM - NEW ISOLATED TABLES
+// These tables are completely separate from the bulk CNR workflow above.
+// Used for single-CNR case management with eCourts integration.
+// ============================================================================
+
+// Advocate profiles for case management
+export const directCnrAdvocates = pgTable("direct_cnr_advocates", {
+  id: serial("id").primaryKey(),
+  uuid: varchar("uuid", { length: 36 }).notNull().unique().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 300 }).notNull(),
+  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 50 }),
+  barCouncilId: varchar("bar_council_id", { length: 100 }),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Managed cases - main table for Direct CNR workflow
+export const directCnrCases = pgTable("direct_cnr_cases", {
+  id: serial("id").primaryKey(),
+  uuid: varchar("uuid", { length: 36 }).notNull().unique().default(sql`gen_random_uuid()`),
+  advocateId: integer("advocate_id").references(() => directCnrAdvocates.id),
+  cnr: varchar("cnr", { length: 50 }).notNull().unique(),
+  districtId: integer("district_id").notNull().references(() => districts.id),
+  
+  // Case details from eCourts extraction
+  caseType: varchar("case_type", { length: 100 }),
+  filingNumber: varchar("filing_number", { length: 100 }),
+  filingDate: date("filing_date"),
+  registrationNumber: varchar("registration_number", { length: 100 }),
+  registrationDate: date("registration_date"),
+  
+  // Parties
+  petitionerName: text("petitioner_name"),
+  petitionerAdvocate: text("petitioner_advocate"),
+  respondentName: text("respondent_name"),
+  respondentAdvocate: text("respondent_advocate"),
+  
+  // Case status
+  firstHearingDate: date("first_hearing_date"),
+  nextHearingDate: date("next_hearing_date"),
+  caseStage: varchar("case_stage", { length: 200 }),
+  courtName: varchar("court_name", { length: 300 }),
+  judgeName: varchar("judge_name", { length: 300 }),
+  
+  // Processing flags
+  caseDetailsExtracted: boolean("case_details_extracted").notNull().default(false),
+  initialOrdersDownloaded: boolean("initial_orders_downloaded").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  
+  // Timestamps
+  lastEcourtsSync: timestamp("last_ecourts_sync"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => [
+  index("idx_direct_cnr_cases_advocate").on(table.advocateId),
+  index("idx_direct_cnr_cases_district").on(table.districtId),
+  index("idx_direct_cnr_cases_next_hearing").on(table.nextHearingDate),
+]);
+
+// Orders for managed cases
+export const directCnrOrders = pgTable("direct_cnr_orders", {
+  id: serial("id").primaryKey(),
+  uuid: varchar("uuid", { length: 36 }).notNull().unique().default(sql`gen_random_uuid()`),
+  caseId: integer("case_id").notNull().references(() => directCnrCases.id, { onDelete: "cascade" }),
+  orderNo: integer("order_no").notNull(),
+  orderDate: date("order_date").notNull(),
+  hearingDate: date("hearing_date"),
+  url: text("url").notNull(),
+  encodedPayload: text("encoded_payload").notNull(),
+  
+  // PDF status
+  pdfExists: boolean("pdf_exists").notNull().default(false),
+  pdfPath: text("pdf_path"),
+  pdfSizeBytes: integer("pdf_size_bytes"),
+  httpStatusCode: integer("http_status_code"),
+  
+  // Processing status
+  textExtracted: boolean("text_extracted").notNull().default(false),
+  classificationDone: boolean("classification_done").notNull().default(false),
+  summaryGenerated: boolean("summary_generated").notNull().default(false),
+  
+  // Retry tracking
+  retryCount: integer("retry_count").notNull().default(0),
+  lastAttemptAt: timestamp("last_attempt_at"),
+  errorMessage: text("error_message"),
+  
+  // Discovery source
+  discoveredFrom: varchar("discovered_from", { length: 50 }).default("initial_sync"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => [
+  index("idx_direct_cnr_orders_case").on(table.caseId),
+  index("idx_direct_cnr_orders_pdf").on(table.pdfExists),
+  uniqueIndex("uq_direct_cnr_order").on(table.caseId, table.orderNo, table.orderDate),
+]);
+
+// Extracted text from PDFs
+export const directCnrPdfTexts = pgTable("direct_cnr_pdf_texts", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").notNull().references(() => directCnrOrders.id, { onDelete: "cascade" }).unique(),
+  rawText: text("raw_text").notNull(),
+  cleanedText: text("cleaned_text"),
+  pageCount: integer("page_count"),
+  wordCount: integer("word_count"),
+  extractedAt: timestamp("extracted_at").notNull().defaultNow(),
+});
+
+// Order summaries with advocate preparation guidance
+export const directCnrSummaries = pgTable("direct_cnr_summaries", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").notNull().references(() => directCnrOrders.id, { onDelete: "cascade" }).unique(),
+  
+  // Case classification
+  caseTitle: text("case_title"),
+  caseCategory: varchar("case_category", { length: 100 }),
+  statutoryActName: text("statutory_act_name"),
+  orderType: varchar("order_type", { length: 100 }),
+  orderSummary: text("order_summary"),
+  operativePortion: text("operative_portion"),
+  nextHearingDate: date("next_hearing_date"),
+  
+  // Order flags
+  isFinalOrder: boolean("is_final_order").notNull().default(false),
+  isSummonsOrder: boolean("is_summons_order").notNull().default(false),
+  isNoticeOrder: boolean("is_notice_order").notNull().default(false),
+  
+  // Advocate guidance (unique to Direct CNR)
+  preparationNotes: text("preparation_notes"),
+  actionItems: text("action_items"), // JSON array stored as text
+  
+  // Confidence
+  classificationConfidence: real("classification_confidence"),
+  llmModelUsed: varchar("llm_model_used", { length: 100 }),
+  classifiedAt: timestamp("classified_at").notNull().defaultNow(),
+});
+
+// Monitoring schedule for new orders (30-day check cycle)
+export const directCnrMonitoring = pgTable("direct_cnr_monitoring", {
+  id: serial("id").primaryKey(),
+  caseId: integer("case_id").notNull().references(() => directCnrCases.id, { onDelete: "cascade" }),
+  triggerDate: date("trigger_date").notNull(), // Hearing date that triggers monitoring
+  startMonitoringDate: date("start_monitoring_date").notNull(),
+  endMonitoringDate: date("end_monitoring_date").notNull(),
+  
+  // Status
+  isActive: boolean("is_active").notNull().default(true),
+  orderFound: boolean("order_found").notNull().default(false),
+  foundOrderId: integer("found_order_id").references(() => directCnrOrders.id),
+  
+  // Tracking
+  totalChecks: integer("total_checks").notNull().default(0),
+  lastCheckAt: timestamp("last_check_at"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => [
+  index("idx_direct_cnr_monitoring_case").on(table.caseId),
+  index("idx_direct_cnr_monitoring_active").on(table.isActive),
+  index("idx_direct_cnr_monitoring_dates").on(table.startMonitoringDate, table.endMonitoringDate),
+]);
+
+// ============================================================================
+// DIRECT CNR RELATIONS
+// ============================================================================
+
+export const directCnrAdvocatesRelations = relations(directCnrAdvocates, ({ many }) => ({
+  cases: many(directCnrCases),
+}));
+
+export const directCnrCasesRelations = relations(directCnrCases, ({ one, many }) => ({
+  advocate: one(directCnrAdvocates, {
+    fields: [directCnrCases.advocateId],
+    references: [directCnrAdvocates.id],
+  }),
+  district: one(districts, {
+    fields: [directCnrCases.districtId],
+    references: [districts.id],
+  }),
+  orders: many(directCnrOrders),
+  monitoringSchedules: many(directCnrMonitoring),
+}));
+
+export const directCnrOrdersRelations = relations(directCnrOrders, ({ one }) => ({
+  case: one(directCnrCases, {
+    fields: [directCnrOrders.caseId],
+    references: [directCnrCases.id],
+  }),
+  pdfText: one(directCnrPdfTexts),
+  summary: one(directCnrSummaries),
+}));
+
+export const directCnrPdfTextsRelations = relations(directCnrPdfTexts, ({ one }) => ({
+  order: one(directCnrOrders, {
+    fields: [directCnrPdfTexts.orderId],
+    references: [directCnrOrders.id],
+  }),
+}));
+
+export const directCnrSummariesRelations = relations(directCnrSummaries, ({ one }) => ({
+  order: one(directCnrOrders, {
+    fields: [directCnrSummaries.orderId],
+    references: [directCnrOrders.id],
+  }),
+}));
+
+export const directCnrMonitoringRelations = relations(directCnrMonitoring, ({ one }) => ({
+  case: one(directCnrCases, {
+    fields: [directCnrMonitoring.caseId],
+    references: [directCnrCases.id],
+  }),
+  foundOrder: one(directCnrOrders, {
+    fields: [directCnrMonitoring.foundOrderId],
+    references: [directCnrOrders.id],
+  }),
+}));
+
+// ============================================================================
+// DIRECT CNR INSERT SCHEMAS & TYPES
+// ============================================================================
+
+export const insertDirectCnrAdvocateSchema = createInsertSchema(directCnrAdvocates).omit({ 
+  id: true, uuid: true, createdAt: true, updatedAt: true 
+});
+export const insertDirectCnrCaseSchema = createInsertSchema(directCnrCases).omit({ 
+  id: true, uuid: true, createdAt: true, updatedAt: true 
+});
+export const insertDirectCnrOrderSchema = createInsertSchema(directCnrOrders).omit({ 
+  id: true, uuid: true, createdAt: true, updatedAt: true 
+});
+export const insertDirectCnrPdfTextSchema = createInsertSchema(directCnrPdfTexts).omit({ 
+  id: true, extractedAt: true 
+});
+export const insertDirectCnrSummarySchema = createInsertSchema(directCnrSummaries).omit({ 
+  id: true, classifiedAt: true 
+});
+export const insertDirectCnrMonitoringSchema = createInsertSchema(directCnrMonitoring).omit({ 
+  id: true, createdAt: true 
+});
+
+export type InsertDirectCnrAdvocate = z.infer<typeof insertDirectCnrAdvocateSchema>;
+export type InsertDirectCnrCase = z.infer<typeof insertDirectCnrCaseSchema>;
+export type InsertDirectCnrOrder = z.infer<typeof insertDirectCnrOrderSchema>;
+export type InsertDirectCnrPdfText = z.infer<typeof insertDirectCnrPdfTextSchema>;
+export type InsertDirectCnrSummary = z.infer<typeof insertDirectCnrSummarySchema>;
+export type InsertDirectCnrMonitoring = z.infer<typeof insertDirectCnrMonitoringSchema>;
+
+export type DirectCnrAdvocate = typeof directCnrAdvocates.$inferSelect;
+export type DirectCnrCase = typeof directCnrCases.$inferSelect;
+export type DirectCnrOrder = typeof directCnrOrders.$inferSelect;
+export type DirectCnrPdfText = typeof directCnrPdfTexts.$inferSelect;
+export type DirectCnrSummary = typeof directCnrSummaries.$inferSelect;
+export type DirectCnrMonitoring = typeof directCnrMonitoring.$inferSelect;
+
+// ============================================================================
+// END OF DIRECT CNR TABLES
+// ============================================================================
+
 export const cnrGenerationRequestSchema = z.object({
   districtId: z.number().int().positive(),
   startSerial: z.number().int().positive(),
