@@ -172,6 +172,24 @@ The build script bundles these dependencies to reduce cold start times:
 - Next hearing date
 - Order flags (Summons, Notice, Fresh Case, Final Order, Business Entity)
 
+### Case Reports & Export Feature (Dec 10, 2025)
+
+**New Categories Added:**
+- COMMERCIAL_COURTS: Commercial Courts Act, 2015 (commercial disputes)
+
+**Case Reports Page (`/case-reports`):**
+- Filter cases by statutory act category (NI_ACT, COMMERCIAL_COURTS, MACT, etc.)
+- View filtered list with party names, case titles, district, order date
+- Export to Excel with full details (25 columns)
+
+**New API Endpoints:**
+- `GET /api/reports/case-categories` - Get count of cases per category
+- `GET /api/reports/cases-by-category?categories=NI_ACT,COMMERCIAL_COURTS&limit=500` - Get filtered cases
+- `GET /api/reports/export-cases?categories=NI_ACT,COMMERCIAL_COURTS` - Download Excel file
+
+**Excel Export Columns:**
+CNR Number, District, Case Category, Case Title, Case Number, Case Type, Statutory Act, Petitioner Names, Respondent Names, Petitioner Advocates, Respondent Advocates, Judge Name, Court Name, Order Date, Order Type, Order Summary, Next Hearing Date, Fresh Case, Fresh Case Phrase, Summons Order, Notice Order, Final Order, Has Business Entity, Confidence, Classified At
+
 **Verified Test (Dec 10, 2025):**
 - Order 183055 (MACT-01, West/THC/Delhi)
 - statutoryActName: "MACT - Motor Accident Claims Tribunal under Motor Vehicles Act, 1988"
