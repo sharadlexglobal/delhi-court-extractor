@@ -2,7 +2,7 @@ import { db } from "./db";
 import { districts } from "@shared/schema";
 
 // VERIFIED CORRECT MAPPINGS based on actual CNR format (DL + code_prefix + establishment + serial + year)
-// Example: DLWT010127152025 = DL + WT + 01 + 0127152 + 025
+// Example: DLWT010127152025 = DL + WT + 01 + 012715 + 2025 (4-digit year, 6-digit serial)
 // Domains verified working via ZenRows with India proxy
 const delhiDistricts = [
   { name: "Central Delhi", codePrefix: "CT", establishmentCode: "01", baseUrl: "https://centraldelhi.dcourts.gov.in" },
@@ -29,8 +29,8 @@ export async function seedDistricts(): Promise<{ added: number; skipped: number 
         codePrefix: district.codePrefix,
         establishmentCode: district.establishmentCode,
         baseUrl: district.baseUrl,
-        serialWidth: 7,
-        yearFormat: "3-digit",
+        serialWidth: 6,
+        yearFormat: "4-digit",
         isActive: true,
       }).onConflictDoNothing();
       

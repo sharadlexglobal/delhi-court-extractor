@@ -42,8 +42,8 @@ Preferred communication style: Simple, everyday language.
 
 ### Delhi District Court Mappings (VERIFIED Dec 10, 2025)
 
-CNR Format: `DL` + `code_prefix` + `establishment_code` + `serial_number(7 digits)` + `year(3 digits)`
-Example: DLWT010127152025 = DL + WT + 01 + 0127152 + 025
+CNR Format: `DL` + `code_prefix` + `establishment_code` + `serial_number(6 digits)` + `year(4 digits)`
+Example: DLWT010127152025 = DL + WT + 01 + 012715 + 2025
 
 | District | CNR Prefix | Code | Domain |
 |----------|------------|------|--------|
@@ -112,8 +112,8 @@ The build script bundles these dependencies to reduce cold start times:
 
 ## Verified End-to-End Test (Dec 10, 2025)
 
-**Test Case**: DLWT010127152025 (West Delhi, serial 127152, year 2025)
-- CNR Generation: ✓ Correct format DL+WT+01+0127152+025
+**Test Case**: DLWT010127152025 (West Delhi, serial 012715, year 2025)
+- CNR Generation: ✓ Correct format DL+WT+01+012715+2025
 - URL Construction: ✓ Using westdelhi.dcourts.gov.in domain
 - PDF Download: ✓ 140,686 bytes via ZenRows (Dec 4 order)
 - Text Extraction: ✓ 134 words extracted (Bail Matter No. 4276/2025)

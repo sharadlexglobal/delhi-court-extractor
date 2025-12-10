@@ -88,7 +88,7 @@ export async function registerRoutes(
 
       for (let serial = startSerial; serial <= endSerial; serial++) {
         const paddedSerial = serial.toString().padStart(district.serialWidth, "0");
-        const yearStr = year.toString().slice(-3);
+        const yearStr = year.toString().slice(-4);
         const cnrString = `DL${district.codePrefix}${district.establishmentCode}${paddedSerial}${yearStr}`;
 
         const existing = await storage.getCnrByCnr(cnrString);
