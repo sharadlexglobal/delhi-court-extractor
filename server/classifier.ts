@@ -194,25 +194,98 @@ Return a JSON object with the following fields:
    - What the court decided or ordered
    - Who was present/absent
 
-4. **BUSINESS ENTITY DETECTION** - Extract ALL business/company names from the document:
+4. **BUSINESS ENTITY DETECTION** - Extract ALL business/company/firm names from the document:
 
-   **DEFINITELY A BUSINESS if name contains:**
-   - Legal suffixes: Pvt Ltd, Private Limited, Ltd, Limited, LLP, OPC, Inc, Corp, Co., Company
-   - Business words: Enterprises, Industries, Traders, Trading, Exports, Imports, Merchants, Suppliers, Distributors, Dealers, Solutions, Services, Consultants, Associates, Manufacturing, Manufacturers, Works, Factory, Pharma, Construction, Builders, Developers, Properties, Realty, Store, Mart, Hotels, Restaurant, Tech, Technologies, Infotech, Finance, Financiers, Jewellers, Textiles, Motors, Transport, Logistics
-   - Family patterns: & Sons, & Brothers, Bros, & Co, & Associates
-
-   **INDIAN BUSINESS NAMING EXAMPLES:**
-   - "Gupta Enterprises", "Agarwal Traders", "Singh Motors", "Patel Industries"
-   - "Sri Lakshmi Industries", "Shri Balaji Enterprises" 
-   - "Shah & Co", "Bose Brothers", "Sharma & Sons"
-   - "ABC Pvt Ltd", "XYZ LLP", "DEF Trading Company"
-
-   **NOT A BUSINESS (Individual person) if:**
-   - Has S/o, D/o, W/o (Son of, Daughter of, Wife of)
-   - Simple personal name like "Rajesh Kumar", "Sunita Devi"
-   - Has title: Shri, Smt, Mr, Mrs, Ms, Dr followed by personal name only
-
-   **Entity Types:** Pvt Ltd, LLP, Partnership, Sole Proprietor, Public Ltd, Trust, Society, HUF, Government
+   ## STEP 1: IDENTIFY BUSINESS INDICATORS
+   
+   **STRONG INDICATORS (100% BUSINESS):**
+   - Prefix "M/s" or "M/s." (Messrs - always indicates a business)
+   - Legal suffixes: Pvt Ltd, Private Limited, Ltd, Limited, LLP, OPC, Inc, Corporation, Corp
+   - Context phrases: "through its Director", "through its Proprietor", "through its Partner", "through its Managing Director", "represented by"
+   
+   **LEGAL ENTITY SUFFIXES:**
+   - Private Company: "Pvt Ltd", "Pvt. Ltd.", "Private Limited", "(P) Ltd"
+   - Public Company: "Ltd", "Limited", "Public Limited"
+   - LLP: "LLP", "Limited Liability Partnership"
+   - Partnership: "& Co", "& Co.", "& Company", "& Sons", "& Brothers", "Bros"
+   - Cooperative: "Co-operative", "Cooperative", "Co-op", "Sahakari"
+   - Bank/Financial: "Bank", "Finance", "Financiers", "NBFC", "Insurance", "Nidhi"
+   - Trust/Society: "Trust", "Foundation", "Society", "Sangh", "Samiti", "Sabha", "NGO"
+   
+   **BUSINESS WORDS (in name = likely business):**
+   - Trade: Enterprises, Industries, Traders, Trading, Exports, Imports, Merchants, Suppliers, Distributors, Dealers, Agencies, Agency
+   - Services: Solutions, Services, Consultants, Consulting, Associates, Advisors, Consultancy
+   - Manufacturing: Manufacturing, Manufacturers, Works, Foundry, Mills, Factory, Pharma, Chemicals, Steels, Metals, Plastics, Polymers
+   - Construction: Construction, Builders, Developers, Properties, Realty, Infra, Infrastructure, Estate, Housing
+   - Retail: Store, Stores, Mart, Emporium, Bazaar, Showroom, Depot, Warehouse
+   - Hospitality: Hotels, Hotel, Restaurant, Caterers, Caterings, Foods, Beverages, Dhaba
+   - Tech: Tech, Technologies, Infotech, Systems, Software, IT, Digital, Cyber, Solutions
+   - Finance: Finance, Financiers, Credits, Investments, Securities, Capital, Leasing
+   - Transport: Motors, Automobiles, Transport, Transporters, Logistics, Cargo, Carriers, Travels, Movers, Packers
+   - Specific Industries: Jewellers, Jewellery, Textiles, Garments, Fabrics, Leather, Furniture, Electronics, Electricals, Hardware, Paints, Cement, Tyres, Agro, Farms, Dairy, Poultry
+   
+   **INDIAN REGIONAL BUSINESS PATTERNS:**
+   - North India: "[Surname] + Business Word" → Gupta Enterprises, Agarwal Traders, Bansal Industries, Mittal Steels, Jindal Exports
+   - South India: "Sri/Shri/Sree/Sai + Name" → Sri Lakshmi Industries, Shri Balaji Enterprises, Sai Ram Traders, Sri Venkateshwara Steels
+   - Gujarat/Marwari: Patel Industries, Shah & Co, Jain Traders, Mehta Brothers, Kothari Jewellers
+   - Punjab/Haryana: Singh Motors, Dhillon Farms, Gill Transport, Sandhu Trucking, Saini Builders
+   - Bengal/East: Bose Brothers, Ghosh Enterprises, Das Trading, Chatterjee & Sons, Roy Industries
+   - Maharashtra: Patil Construction, Deshmukh Agro, Kulkarni Associates, Thakkar Textiles
+   
+   **FAMILY BUSINESS PATTERNS:**
+   - "& Sons", "& Brothers", "& Bros", "& Co", "& Company", "& Associates", "& Partners", "& Family"
+   - "Sons of [Name]", "[Name] Brothers", "[Name] & [Name]" (two surnames)
+   
+   ## STEP 2: IDENTIFY INDIVIDUALS (NOT BUSINESS)
+   
+   **DEFINITELY AN INDIVIDUAL IF:**
+   - Contains: S/o (Son of), D/o (Daughter of), W/o (Wife of), C/o (Care of)
+   - Contains: R/o (Resident of), @, alias, @ alias
+   - Simple personal name: First Name + Last Name only (e.g., "Rajesh Kumar", "Sunita Devi", "Mohammad Ali")
+   - Has personal title + simple name: Shri/Smt/Mr/Mrs/Ms/Dr + [First Name] + [Last Name]
+   - Is clearly an advocate: "Advocate [Name]", "[Name], Advocate", "Counsel for..."
+   - Hindu names without business words: Ram Prasad, Sita Devi, Lakshmi Narayan, etc.
+   - Muslim names without business words: Mohammad Imran, Fatima Begum, Abdul Rahman, etc.
+   - Sikh names without business words: Gurpreet Singh, Harjinder Kaur, etc.
+   
+   **EXAMPLES - INDIVIDUAL (DO NOT EXTRACT):**
+   - "Shri Ramesh Kumar S/o Late Mohan Lal" → Individual
+   - "Smt. Sunita Devi W/o Rajesh" → Individual
+   - "Mohammad Ali R/o Delhi" → Individual
+   - "Dr. Amit Sharma" → Individual (unless followed by "Hospital" or "Clinic")
+   
+   **EXAMPLES - BUSINESS (DO EXTRACT):**
+   - "M/s Gupta Enterprises through its Proprietor Shri Ramesh Gupta" → Extract "M/s Gupta Enterprises"
+   - "ABC Pvt Ltd through its Director Mr. Suresh Kumar" → Extract "ABC Pvt Ltd"
+   - "Sri Lakshmi Traders" → Extract (has "Traders" = business word)
+   - "Sharma & Sons" → Extract (has "& Sons" = family business pattern)
+   - "National Insurance Company Ltd" → Extract (has "Company Ltd")
+   - "State Bank of India" → Extract (is a bank)
+   - "Delhi Development Authority" → Extract as Government entity
+   
+   ## STEP 3: ENTITY TYPE CLASSIFICATION
+   
+   Use these entity types based on what you find:
+   - "Pvt Ltd" → if contains "Pvt Ltd", "Private Limited", "(P) Ltd"
+   - "Public Ltd" → if contains "Ltd", "Limited" without "Private"
+   - "LLP" → if contains "LLP" or "Limited Liability Partnership"
+   - "Partnership" → if contains "& Sons", "& Bros", "& Co", "Partners"
+   - "Sole Proprietor" → if prefixed with "M/s" + single name OR "Prop." mentioned
+   - "Trust" → if contains "Trust", "Foundation"
+   - "Society" → if contains "Society", "Samiti", "Sangh", "Sabha"
+   - "HUF" → if contains "HUF" or "Hindu Undivided Family"
+   - "Government" → if government department, authority, PSU, municipal body
+   - "Bank" → if contains "Bank", or is a known bank name
+   - "Insurance" → if contains "Insurance" or is insurance company
+   - "Cooperative" → if contains "Co-operative", "Sahakari"
+   
+   ## STEP 4: EXTRACT COMPLETE BUSINESS NAME
+   
+   - Extract the FULL legal name as it appears in the document
+   - Include "M/s" prefix if present
+   - Include legal suffix (Pvt Ltd, LLP, etc.)
+   - DO NOT include personal names that come after "through its..." or "represented by..."
+   - If same business appears multiple times, extract only once
 
 5. **PERSON LEADS**: For fresh cases, extract individual person names from respondent/defendant side as potential leads.
 
