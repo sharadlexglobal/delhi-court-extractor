@@ -101,18 +101,28 @@ export default function CnrGenerator() {
     }
   }, [allJobs, activeJobId]);
 
-  // Auto-clear activeJobId when pdf_download job completes or fails
+  // Auto-clear activeJobId when any job completes or fails
   useEffect(() => {
-    if (activeJob && activeJob.jobType === "pdf_download") {
-      if (activeJob.status === "completed" || activeJob.status === "failed") {
-        lastCompletedJobIdRef.current = activeJob.id;
-        setActiveJobId(null);
-        toast({
-          title: activeJob.status === "completed" ? "Download Complete" : "Download Finished",
-          description: `${activeJob.successfulItems} successful, ${activeJob.failedItems} failed out of ${activeJob.totalItems}`,
-          variant: activeJob.failedItems > 0 ? "destructive" : "default",
-        });
-      }
+    if (activeJob && (activeJob.status === "completed" || activeJob.status === "failed")) {
+      // Prevent double-clearing the same job
+      if (lastCompletedJobIdRef.current === activeJob.id) return;
+      
+      lastCompletedJobIdRef.current = activeJob.id;
+      setActiveJobId(null);
+      
+      const jobTypeLabels: Record<string, string> = {
+        pdf_download: "PDF Download",
+        text_extraction: "Text Extraction",
+        classification: "Classification",
+        enrichment: "Enrichment",
+      };
+      const jobLabel = jobTypeLabels[activeJob.jobType] || "Job";
+      
+      toast({
+        title: activeJob.status === "completed" ? `${jobLabel} Complete` : `${jobLabel} Finished`,
+        description: `${activeJob.successfulItems} successful, ${activeJob.failedItems} failed out of ${activeJob.totalItems}`,
+        variant: activeJob.failedItems > 0 ? "destructive" : "default",
+      });
     }
   }, [activeJob, toast]);
 
@@ -726,10 +736,10 @@ export default function CnrGenerator() {
                 variant="secondary"
                 className="w-full"
                 onClick={handleStartDownload}
-                disabled={startDownloadMutation.isPending || !!activeJobId || generatedOrderIds.length === 0}
+                disabled={startDownloadMutation.isPending || (!!activeJobId && activeJob?.jobType === "pdf_download") || generatedOrderIds.length === 0}
                 data-testid="button-start-download"
               >
-                {startDownloadMutation.isPending || activeJobId ? (
+                {startDownloadMutation.isPending || (activeJobId && activeJob?.jobType === "pdf_download") ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Downloading PDFs...
@@ -823,7 +833,7 @@ export default function CnrGenerator() {
                 variant="secondary"
                 className="w-full"
                 onClick={handleExtractTexts}
-                disabled={extractTextsMutation.isPending || !!activeJobId}
+                disabled={extractTextsMutation.isPending || (!!activeJobId && activeJob?.jobType === "text_extraction")}
                 data-testid="button-extract-texts"
               >
                 {extractTextsMutation.isPending || (activeJobId && activeJob?.jobType === "text_extraction") ? (
@@ -851,7 +861,7 @@ export default function CnrGenerator() {
                 variant="secondary"
                 className="w-full"
                 onClick={handleClassify}
-                disabled={classifyMutation.isPending || !!activeJobId}
+                disabled={classifyMutation.isPending || (!!activeJobId && activeJob?.jobType === "classification")}
                 data-testid="button-classify"
               >
                 {classifyMutation.isPending || (activeJobId && activeJob?.jobType === "classification") ? (
@@ -879,7 +889,7 @@ export default function CnrGenerator() {
                 variant="secondary"
                 className="w-full"
                 onClick={handleEnrichEntities}
-                disabled={enrichEntitiesMutation.isPending || !!activeJobId}
+                disabled={enrichEntitiesMutation.isPending || (!!activeJobId && activeJob?.jobType === "enrichment")}
                 data-testid="button-enrich"
               >
                 {enrichEntitiesMutation.isPending || (activeJobId && activeJob?.jobType === "enrichment") ? (
