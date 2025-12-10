@@ -3,6 +3,14 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { Document, Page, pdfjs } from "react-pdf";
+import "react-pdf/dist/Page/AnnotationLayer.css";
+import "react-pdf/dist/Page/TextLayer.css";
+
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString();
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,6 +69,10 @@ import {
   Users,
   BarChart3,
   FileSearch,
+  ChevronLeft,
+  ChevronRight,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
@@ -172,6 +184,9 @@ export default function DirectCnr() {
   const [partyDialogOpen, setPartyDialogOpen] = useState(false);
   const [selectedParty, setSelectedParty] = useState<string>("");
   const [pdfPreviewOrderId, setPdfPreviewOrderId] = useState<number | null>(null);
+  const [pdfNumPages, setPdfNumPages] = useState<number>(0);
+  const [pdfPageNumber, setPdfPageNumber] = useState<number>(1);
+  const [pdfScale, setPdfScale] = useState<number>(1.0);
   const [showMasterSummary, setShowMasterSummary] = useState(false);
   const { toast } = useToast();
 
@@ -1223,51 +1238,123 @@ export default function DirectCnr() {
       </Dialog>
 
       {/* PDF Preview Dialog */}
-      <Dialog open={pdfPreviewOrderId !== null} onOpenChange={(open) => !open && setPdfPreviewOrderId(null)}>
-        <DialogContent className="max-w-4xl h-[80vh]">
+      <Dialog 
+        open={pdfPreviewOrderId !== null} 
+        onOpenChange={(open) => {
+          if (!open) {
+            setPdfPreviewOrderId(null);
+            setPdfNumPages(0);
+            setPdfPageNumber(1);
+            setPdfScale(1.0);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl h-[85vh]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 justify-between">
+            <DialogTitle className="flex items-center gap-2 justify-between flex-wrap">
               <span className="flex items-center gap-2">
                 <FileText className="h-5 w-5" />
                 Order PDF Preview
               </span>
-              {pdfPreviewOrderId && (
+              <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
-                  size="sm"
-                  onClick={() => window.open(`/api/direct-cnr/orders/${pdfPreviewOrderId}/pdf`, '_blank')}
-                  data-testid="button-open-pdf-newtab"
+                  size="icon"
+                  onClick={() => setPdfScale(s => Math.max(0.5, s - 0.25))}
+                  disabled={pdfScale <= 0.5}
+                  data-testid="button-pdf-zoom-out"
                 >
-                  <Eye className="h-4 w-4 mr-2" />
-                  Open in New Tab
+                  <ZoomOut className="h-4 w-4" />
                 </Button>
-              )}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 h-[calc(80vh-100px)] min-h-0">
-            {pdfPreviewOrderId && (
-              <object
-                data={`/api/direct-cnr/orders/${pdfPreviewOrderId}/pdf`}
-                type="application/pdf"
-                className="w-full h-full border rounded-md"
-                data-testid="object-pdf-preview"
-              >
-                <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center bg-muted/50 rounded-md">
-                  <FileText className="h-16 w-16 text-muted-foreground" />
-                  <p className="text-muted-foreground">
-                    PDF preview is not available in this browser.
-                  </p>
+                <span className="text-sm min-w-[50px] text-center">{Math.round(pdfScale * 100)}%</span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setPdfScale(s => Math.min(2, s + 0.25))}
+                  disabled={pdfScale >= 2}
+                  data-testid="button-pdf-zoom-in"
+                >
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+                <Separator orientation="vertical" className="h-6" />
+                {pdfPreviewOrderId && (
                   <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => window.open(`/api/direct-cnr/orders/${pdfPreviewOrderId}/pdf`, '_blank')}
-                    data-testid="button-download-pdf-fallback"
+                    data-testid="button-open-pdf-newtab"
                   >
                     <Download className="h-4 w-4 mr-2" />
-                    Open PDF in New Tab
+                    Download
                   </Button>
-                </div>
-              </object>
-            )}
-          </div>
+                )}
+              </div>
+            </DialogTitle>
+          </DialogHeader>
+          
+          {/* PDF Viewer */}
+          <ScrollArea className="flex-1 h-[calc(85vh-140px)] border rounded-md bg-muted/30">
+            <div className="flex justify-center p-4">
+              {pdfPreviewOrderId && (
+                <Document
+                  file={`/api/direct-cnr/orders/${pdfPreviewOrderId}/pdf`}
+                  onLoadSuccess={({ numPages }) => setPdfNumPages(numPages)}
+                  loading={
+                    <div className="flex items-center justify-center h-64">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                  }
+                  error={
+                    <div className="flex flex-col items-center justify-center h-64 gap-4 text-center">
+                      <XCircle className="h-12 w-12 text-destructive" />
+                      <p className="text-muted-foreground">Failed to load PDF</p>
+                      <Button
+                        onClick={() => window.open(`/api/direct-cnr/orders/${pdfPreviewOrderId}/pdf`, '_blank')}
+                        data-testid="button-download-pdf-fallback"
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Download PDF Instead
+                      </Button>
+                    </div>
+                  }
+                >
+                  <Page 
+                    pageNumber={pdfPageNumber} 
+                    scale={pdfScale}
+                    renderTextLayer={true}
+                    renderAnnotationLayer={true}
+                  />
+                </Document>
+              )}
+            </div>
+          </ScrollArea>
+
+          {/* Page Navigation */}
+          {pdfNumPages > 0 && (
+            <div className="flex items-center justify-center gap-4 pt-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setPdfPageNumber(p => Math.max(1, p - 1))}
+                disabled={pdfPageNumber <= 1}
+                data-testid="button-pdf-prev"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm">
+                Page {pdfPageNumber} of {pdfNumPages}
+              </span>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setPdfPageNumber(p => Math.min(pdfNumPages, p + 1))}
+                disabled={pdfPageNumber >= pdfNumPages}
+                data-testid="button-pdf-next"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
