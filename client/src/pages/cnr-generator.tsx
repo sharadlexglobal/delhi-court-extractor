@@ -88,14 +88,33 @@ export default function CnrGenerator() {
     refetchInterval: activeJobId ? 2000 : 10000,
   });
 
+  // Only auto-attach to pdf_download jobs to prevent spinner hijacking by other job types
   useEffect(() => {
     if (allJobs && !activeJobId) {
-      const runningJob = allJobs.find(job => job.status === "processing" || job.status === "pending");
-      if (runningJob) {
-        setActiveJobId(runningJob.id);
+      const runningPdfJob = allJobs.find(
+        job => job.jobType === "pdf_download" && 
+               (job.status === "processing" || job.status === "pending")
+      );
+      if (runningPdfJob) {
+        setActiveJobId(runningPdfJob.id);
       }
     }
   }, [allJobs, activeJobId]);
+
+  // Auto-clear activeJobId when pdf_download job completes or fails
+  useEffect(() => {
+    if (activeJob && activeJob.jobType === "pdf_download") {
+      if (activeJob.status === "completed" || activeJob.status === "failed") {
+        lastCompletedJobIdRef.current = activeJob.id;
+        setActiveJobId(null);
+        toast({
+          title: activeJob.status === "completed" ? "Download Complete" : "Download Finished",
+          description: `${activeJob.successfulItems} successful, ${activeJob.failedItems} failed out of ${activeJob.totalItems}`,
+          variant: activeJob.failedItems > 0 ? "destructive" : "default",
+        });
+      }
+    }
+  }, [activeJob, toast]);
 
   const form = useForm<GenerateFormValues>({
     resolver: zodResolver(generateFormSchema),
