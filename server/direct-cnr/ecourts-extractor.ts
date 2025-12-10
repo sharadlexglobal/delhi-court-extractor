@@ -135,7 +135,7 @@ async function parseECourtsPage(page: Page, cnr: string): Promise<CaseDetails> {
         }
       });
       if (isHistoryTable) {
-        const trs = Array.from(table.querySelectorAll('tbody tr'));
+        const trs = Array.from(table.querySelectorAll('tr'));
         trs.forEach((tr: Element) => {
           const tds = tr.querySelectorAll('td');
           if (tds.length >= 4) {
@@ -155,29 +155,33 @@ async function parseECourtsPage(page: Page, cnr: string): Promise<CaseDetails> {
 
   const interimOrders = await page.evaluate(() => {
     const orders: Array<{orderNumber: number; orderDate: string; orderDetails: string | null}> = [];
+    const debug: string[] = [];
     const tables = Array.from(document.querySelectorAll('table'));
-    for (const table of tables) {
-      const headers = Array.from(table.querySelectorAll('th'));
-      let isOrderTable = false;
-      headers.forEach((h: HTMLTableCellElement) => {
-        if (h.textContent?.includes('Order Number') || h.textContent?.includes('Order Date')) {
-          isOrderTable = true;
-        }
-      });
-      if (isOrderTable) {
-        const trs = Array.from(table.querySelectorAll('tbody tr'));
-        trs.forEach((tr: Element, index: number) => {
+    
+    for (let tableIdx = 0; tableIdx < tables.length; tableIdx++) {
+      const table = tables[tableIdx];
+      const tableText = (table.textContent || '').toLowerCase();
+      const hasOrderKeywords = tableText.includes('order number') || tableText.includes('order date');
+      
+      if (hasOrderKeywords) {
+        debug.push(`Table ${tableIdx} has order keywords`);
+        const trs = Array.from(table.querySelectorAll('tr'));
+        debug.push(`Found ${trs.length} rows`);
+        
+        trs.forEach((tr: Element, rowIdx: number) => {
           const tds = tr.querySelectorAll('td');
           if (tds.length >= 2) {
-            const orderNoText = tds[0]?.textContent?.trim() || '';
-            const orderNo = parseInt(orderNoText) || (index + 1);
-            const orderDate = tds[1]?.textContent?.trim() || '';
-            const orderDetails = tds.length >= 3 ? tds[2]?.textContent?.trim() || null : null;
-            if (orderDate) {
+            const col0 = tds[0]?.textContent?.trim() || '';
+            const col1 = tds[1]?.textContent?.trim() || '';
+            const col2 = tds.length >= 3 ? tds[2]?.textContent?.trim() || '' : '';
+            debug.push(`Row ${rowIdx}: [${col0}] [${col1}] [${col2.substring(0, 30)}]`);
+            
+            const orderNo = parseInt(col0);
+            if (orderNo && col1.match(/\d{2}-\d{2}-\d{4}/)) {
               orders.push({
                 orderNumber: orderNo,
-                orderDate,
-                orderDetails
+                orderDate: col1,
+                orderDetails: col2 || null
               });
             }
           }
@@ -185,8 +189,12 @@ async function parseECourtsPage(page: Page, cnr: string): Promise<CaseDetails> {
         break;
       }
     }
-    return orders;
+    return { orders, debug };
   });
+  
+  console.log(`[eCourts] Orders debug: ${(interimOrders as any).debug?.join(' | ')}`);
+  const extractedOrders = (interimOrders as any).orders || [];
+  console.log(`[eCourts] Found ${extractedOrders.length} interim orders: ${JSON.stringify(extractedOrders)}`);
 
   const parties = await page.evaluate(() => {
     let petitionerName: string | null = null;
@@ -316,7 +324,7 @@ async function parseECourtsPage(page: Page, cnr: string): Promise<CaseDetails> {
     },
     parties,
     caseHistory,
-    interimOrders
+    interimOrders: extractedOrders
   };
 }
 

@@ -75,13 +75,22 @@ interface DirectCase {
   districtId: number;
   advocateId: number | null;
   caseType: string | null;
+  filingNumber: string | null;
+  filingDate: string | null;
+  registrationNumber: string | null;
+  registrationDate: string | null;
   petitionerName: string | null;
+  petitionerAdvocate: string | null;
   respondentName: string | null;
+  respondentAdvocate: string | null;
+  firstHearingDate: string | null;
   nextHearingDate: string | null;
   caseStage: string | null;
+  courtName: string | null;
   caseDetailsExtracted: boolean;
   initialOrdersDownloaded: boolean;
   createdAt: string;
+  orders?: DirectOrder[];
 }
 
 interface DirectOrder {
@@ -564,6 +573,64 @@ export default function DirectCnr() {
                     <div className="text-xs text-muted-foreground">Classified</div>
                   </div>
                 </div>
+
+                {selectedCase.data.caseDetailsExtracted && (
+                  <>
+                    <h3 className="text-lg font-medium mb-3">Case Details</h3>
+                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 mb-4">
+                      <div className="p-3 bg-muted/30 rounded-md">
+                        <div className="text-xs text-muted-foreground uppercase tracking-wide">Case Type</div>
+                        <div className="font-medium">{selectedCase.data.caseType || "—"}</div>
+                      </div>
+                      <div className="p-3 bg-muted/30 rounded-md">
+                        <div className="text-xs text-muted-foreground uppercase tracking-wide">Filing Number</div>
+                        <div className="font-medium">{selectedCase.data.filingNumber || "—"}</div>
+                      </div>
+                      <div className="p-3 bg-muted/30 rounded-md">
+                        <div className="text-xs text-muted-foreground uppercase tracking-wide">Registration Number</div>
+                        <div className="font-medium">{selectedCase.data.registrationNumber || "—"}</div>
+                      </div>
+                      <div className="p-3 bg-muted/30 rounded-md">
+                        <div className="text-xs text-muted-foreground uppercase tracking-wide">First Hearing</div>
+                        <div className="font-medium">{selectedCase.data.firstHearingDate || "—"}</div>
+                      </div>
+                      <div className="p-3 bg-muted/30 rounded-md">
+                        <div className="text-xs text-muted-foreground uppercase tracking-wide">Next Hearing</div>
+                        <div className="font-medium">{selectedCase.data.nextHearingDate || "—"}</div>
+                      </div>
+                      <div className="p-3 bg-muted/30 rounded-md">
+                        <div className="text-xs text-muted-foreground uppercase tracking-wide">Case Stage</div>
+                        <div className="font-medium">{selectedCase.data.caseStage || "—"}</div>
+                      </div>
+                      <div className="p-3 bg-muted/30 rounded-md md:col-span-2 lg:col-span-3">
+                        <div className="text-xs text-muted-foreground uppercase tracking-wide">Court</div>
+                        <div className="font-medium">{selectedCase.data.courtName || "—"}</div>
+                      </div>
+                    </div>
+
+                    <h4 className="text-sm font-medium mb-2">Parties</h4>
+                    <div className="grid gap-3 md:grid-cols-2 mb-4">
+                      <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-md">
+                        <div className="text-xs text-blue-600 dark:text-blue-400 uppercase tracking-wide">Petitioner</div>
+                        <div className="font-medium">{selectedCase.data.petitionerName || "—"}</div>
+                        {selectedCase.data.petitionerAdvocate && (
+                          <div className="text-sm text-muted-foreground mt-1">
+                            Adv: {selectedCase.data.petitionerAdvocate}
+                          </div>
+                        )}
+                      </div>
+                      <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-md">
+                        <div className="text-xs text-amber-600 dark:text-amber-400 uppercase tracking-wide">Respondent</div>
+                        <div className="font-medium">{selectedCase.data.respondentName || "—"}</div>
+                        {selectedCase.data.respondentAdvocate && (
+                          <div className="text-sm text-muted-foreground mt-1">
+                            Adv: {selectedCase.data.respondentAdvocate}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 <Separator className="my-4" />
 
