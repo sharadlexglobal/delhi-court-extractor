@@ -57,13 +57,5 @@ async function seed() {
   process.exit(0);
 }
 
-import { fileURLToPath } from 'url';
-
-const isMainModule = process.argv[1] === fileURLToPath(import.meta.url);
-
-if (isMainModule) {
-  seed().catch((error) => {
-    console.error("Seeding failed:", error);
-    process.exit(1);
-  });
-}
+// Note: Direct execution check removed for CJS compatibility
+// Use: npx tsx server/seed.ts to run seeding manually
