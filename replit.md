@@ -95,3 +95,28 @@ The build script bundles these dependencies to reduce cold start times:
 ### Development
 - Vite dev server with HMR
 - Replit-specific plugins for development experience
+
+## API Endpoints
+
+### CNR Generation
+- `POST /api/cnrs/generate` - Generate CNRs with orders for a district
+
+### PDF Downloads  
+- `POST /api/jobs/start-pdf-download-zenrows` - Start PDF download job using ZenRows API
+
+### Text Extraction
+- `POST /api/jobs/extract-texts` - Extract text from downloaded PDFs
+
+### Classification
+- `POST /api/jobs/classify` - Classify orders using AI to identify business entities
+
+## Verified End-to-End Test (Dec 10, 2025)
+
+**Test Case**: DLWT010127152025 (West Delhi, serial 127152, year 2025)
+- CNR Generation: ✓ Correct format DL+WT+01+0127152+025
+- URL Construction: ✓ Using westdelhi.dcourts.gov.in domain
+- PDF Download: ✓ 140,686 bytes via ZenRows (Dec 4 order)
+- Text Extraction: ✓ 134 words extracted (Bail Matter No. 4276/2025)
+- Classification: ✓ Criminal case, 95% confidence
+
+**Previous Domain Bug Fixed**: DLWT codes were incorrectly mapped to southwestdelhi domain, causing 422 errors. Now correctly mapped to westdelhi.dcourts.gov.in.
