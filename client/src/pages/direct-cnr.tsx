@@ -1226,19 +1226,46 @@ export default function DirectCnr() {
       <Dialog open={pdfPreviewOrderId !== null} onOpenChange={(open) => !open && setPdfPreviewOrderId(null)}>
         <DialogContent className="max-w-4xl h-[80vh]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Order PDF Preview
+            <DialogTitle className="flex items-center gap-2 justify-between">
+              <span className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Order PDF Preview
+              </span>
+              {pdfPreviewOrderId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.open(`/api/direct-cnr/orders/${pdfPreviewOrderId}/pdf`, '_blank')}
+                  data-testid="button-open-pdf-newtab"
+                >
+                  <Eye className="h-4 w-4 mr-2" />
+                  Open in New Tab
+                </Button>
+              )}
             </DialogTitle>
           </DialogHeader>
-          <div className="flex-1 h-full min-h-0">
+          <div className="flex-1 h-[calc(80vh-100px)] min-h-0">
             {pdfPreviewOrderId && (
-              <iframe
-                src={`/api/direct-cnr/orders/${pdfPreviewOrderId}/pdf`}
+              <object
+                data={`/api/direct-cnr/orders/${pdfPreviewOrderId}/pdf`}
+                type="application/pdf"
                 className="w-full h-full border rounded-md"
-                title="PDF Preview"
-                data-testid="iframe-pdf-preview"
-              />
+                data-testid="object-pdf-preview"
+              >
+                <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center bg-muted/50 rounded-md">
+                  <FileText className="h-16 w-16 text-muted-foreground" />
+                  <p className="text-muted-foreground">
+                    PDF preview is not available in this browser.
+                  </p>
+                  <Button
+                    onClick={() => window.open(`/api/direct-cnr/orders/${pdfPreviewOrderId}/pdf`, '_blank')}
+                    data-testid="button-download-pdf-fallback"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Open PDF in New Tab
+                  </Button>
+                </div>
+              </object>
             )}
           </div>
         </DialogContent>
