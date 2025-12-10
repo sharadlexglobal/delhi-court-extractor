@@ -7,6 +7,7 @@ import {
   BarChart3,
   Settings,
   Scale,
+  FileSpreadsheet,
 } from "lucide-react";
 import {
   Sidebar,
@@ -46,6 +47,11 @@ const mainItems = [
     title: "Analytics",
     url: "/analytics",
     icon: BarChart3,
+  },
+  {
+    title: "Case Reports",
+    url: "/case-reports",
+    icon: FileSpreadsheet,
   },
 ];
 

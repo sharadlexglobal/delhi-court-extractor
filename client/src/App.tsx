@@ -14,6 +14,7 @@ import Orders from "@/pages/orders";
 import Leads from "@/pages/leads";
 import Analytics from "@/pages/analytics";
 import Settings from "@/pages/settings";
+import CaseReports from "@/pages/case-reports";
 
 function Router() {
   return (
@@ -23,6 +24,7 @@ function Router() {
       <Route path="/orders" component={Orders} />
       <Route path="/leads" component={Leads} />
       <Route path="/analytics" component={Analytics} />
+      <Route path="/case-reports" component={CaseReports} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
