@@ -21,6 +21,8 @@ import {
   RefreshCw,
   AlertCircle,
   FileText,
+  ExternalLink,
+  Eye,
 } from "lucide-react";
 
 interface CategoryStat {
@@ -32,6 +34,8 @@ interface CaseOrder {
   id: number;
   orderDate: string;
   url: string;
+  pdfPath?: string;
+  pdfExists?: boolean;
   cnr?: {
     cnr: string;
     district?: {
@@ -268,6 +272,7 @@ export default function CaseReports() {
                         <TableHead className="min-w-[150px]">Petitioner</TableHead>
                         <TableHead className="min-w-[150px]">Respondent</TableHead>
                         <TableHead className="w-[100px]">Order Date</TableHead>
+                        <TableHead className="w-[80px]">PDF</TableHead>
                         <TableHead className="w-[100px]">Flags</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -302,6 +307,35 @@ export default function CaseReports() {
                             </TableCell>
                             <TableCell className="text-xs">
                               {caseOrder.orderDate || "-"}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                {caseOrder.pdfExists && caseOrder.pdfPath ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={() => window.open(caseOrder.pdfPath!, '_blank')}
+                                    title="View PDF"
+                                    data-testid={`button-view-pdf-${caseOrder.id}`}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                ) : caseOrder.url ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={() => window.open(caseOrder.url, '_blank')}
+                                    title="Open Court URL"
+                                    data-testid={`button-open-url-${caseOrder.id}`}
+                                  >
+                                    <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                                  </Button>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">-</span>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell>
                               <div className="flex gap-1">
