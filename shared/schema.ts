@@ -488,6 +488,51 @@ export const directCnrCaseRollups = pgTable("direct_cnr_case_rollups", {
   compilationModel: varchar("compilation_model", { length: 100 }),
 });
 
+// Business leads extracted from cases
+export const directCnrBusinessLeads = pgTable("direct_cnr_business_leads", {
+  id: serial("id").primaryKey(),
+  uuid: varchar("uuid", { length: 36 }).notNull().unique().default(sql`gen_random_uuid()`),
+  caseId: integer("case_id").notNull().references(() => directCnrCases.id, { onDelete: "cascade" }),
+  
+  // Entity details
+  rawName: text("raw_name").notNull(), // Original name from court records
+  normalizedName: varchar("normalized_name", { length: 500 }),
+  entityType: varchar("entity_type", { length: 100 }), // pvt_ltd, llp, partnership, proprietorship, trust, society, etc.
+  partyRole: varchar("party_role", { length: 50 }), // petitioner, respondent
+  
+  // Classification details
+  businessIndicators: text("business_indicators"), // JSON array of indicators found
+  classificationConfidence: real("classification_confidence"),
+  isConfirmedBusiness: boolean("is_confirmed_business").notNull().default(false),
+  
+  // Enrichment data
+  indiamartSearchQuery: text("indiamart_search_query"),
+  indiamartProfileUrl: text("indiamart_profile_url"),
+  indiamartSearchResults: text("indiamart_search_results"), // JSON array
+  
+  // MCA/Company data
+  cin: varchar("cin", { length: 50 }),
+  gstin: varchar("gstin", { length: 50 }),
+  pan: varchar("pan", { length: 20 }),
+  registeredAddress: text("registered_address"),
+  city: varchar("city", { length: 100 }),
+  state: varchar("state", { length: 100 }),
+  phone: varchar("phone", { length: 100 }),
+  email: varchar("email", { length: 255 }),
+  website: varchar("website", { length: 500 }),
+  
+  // Enrichment status
+  enrichmentStatus: varchar("enrichment_status", { length: 50 }).default("pending"), // pending, searching, enriched, failed
+  enrichedAt: timestamp("enriched_at"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => [
+  index("idx_direct_cnr_leads_case").on(table.caseId),
+  index("idx_direct_cnr_leads_status").on(table.enrichmentStatus),
+  index("idx_direct_cnr_leads_confirmed").on(table.isConfirmedBusiness),
+]);
+
 // Daily digest email tracking
 export const directCnrDailyDigests = pgTable("direct_cnr_daily_digests", {
   id: serial("id").primaryKey(),
@@ -600,6 +645,9 @@ export const insertDirectCnrCaseRollupSchema = createInsertSchema(directCnrCaseR
 export const insertDirectCnrDailyDigestSchema = createInsertSchema(directCnrDailyDigests).omit({ 
   id: true, createdAt: true 
 });
+export const insertDirectCnrBusinessLeadSchema = createInsertSchema(directCnrBusinessLeads).omit({ 
+  id: true, uuid: true, createdAt: true, updatedAt: true 
+});
 
 export type InsertDirectCnrAdvocate = z.infer<typeof insertDirectCnrAdvocateSchema>;
 export type InsertDirectCnrCase = z.infer<typeof insertDirectCnrCaseSchema>;
@@ -609,6 +657,7 @@ export type InsertDirectCnrSummary = z.infer<typeof insertDirectCnrSummarySchema
 export type InsertDirectCnrMonitoring = z.infer<typeof insertDirectCnrMonitoringSchema>;
 export type InsertDirectCnrCaseRollup = z.infer<typeof insertDirectCnrCaseRollupSchema>;
 export type InsertDirectCnrDailyDigest = z.infer<typeof insertDirectCnrDailyDigestSchema>;
+export type InsertDirectCnrBusinessLead = z.infer<typeof insertDirectCnrBusinessLeadSchema>;
 
 export type DirectCnrAdvocate = typeof directCnrAdvocates.$inferSelect;
 export type DirectCnrCase = typeof directCnrCases.$inferSelect;
@@ -618,6 +667,7 @@ export type DirectCnrSummary = typeof directCnrSummaries.$inferSelect;
 export type DirectCnrMonitoring = typeof directCnrMonitoring.$inferSelect;
 export type DirectCnrCaseRollup = typeof directCnrCaseRollups.$inferSelect;
 export type DirectCnrDailyDigest = typeof directCnrDailyDigests.$inferSelect;
+export type DirectCnrBusinessLead = typeof directCnrBusinessLeads.$inferSelect;
 
 // ============================================================================
 // END OF DIRECT CNR TABLES
