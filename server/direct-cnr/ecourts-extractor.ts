@@ -6,7 +6,7 @@ const CNR_INPUT_FIELD_ID = "#cino";
 const CAPTCHA_INPUT_FIELD_ID = "#fcaptcha_code";
 const SEARCH_BUTTON_ID = "#searchbtn";
 const CAPTCHA_IMAGE_PATTERN = 'img[src*="securimage"]';
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 5;
 
 let openaiClient: OpenAI | null = null;
 
@@ -64,13 +64,13 @@ async function solveCaptcha(captchaImageBytes: Buffer): Promise<string> {
   const base64Image = captchaImageBytes.toString('base64');
 
   const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "gpt-4o",
     messages: [{
       role: "user",
       content: [
         {
           type: "text",
-          text: "Read this CAPTCHA image and return ONLY the 6 characters. No explanation, no spaces, just the 6 characters. Characters are lowercase letters (a-z) and digits (0-9)."
+          text: "Read this CAPTCHA image and return ONLY the 6 characters. No explanation, no spaces, just the 6 characters. Characters are lowercase letters (a-z) and digits (0-9). Be very careful with similar looking characters like 0/O, 1/l/I, 5/S, 8/B."
         },
         {
           type: "image_url",
@@ -259,11 +259,31 @@ export async function extractCaseDetails(cnr: string): Promise<CaseDetails> {
 
         await page.fill(CAPTCHA_INPUT_FIELD_ID, captchaSolution);
         await page.click(SEARCH_BUTTON_ID);
-        await page.waitForTimeout(5000);
-
+        
+        try {
+          await page.waitForSelector('#history_cnr, .case_details_table, .alert-danger, .error', { timeout: 10000 });
+        } catch {
+          console.log(`[eCourts] No result selector found, checking page state...`);
+        }
+        
+        await page.waitForTimeout(2000);
         const html = await page.content();
-
-        if (html.toLowerCase().includes('invalid captcha')) {
+        
+        const captchaStillVisible = await page.locator(CAPTCHA_INPUT_FIELD_ID).isVisible().catch(() => false);
+        const pageTitle = await page.title();
+        const bodyText = await page.locator('body').innerText().catch(() => '');
+        const hasHistoryTable = html.includes('history_cnr') || html.includes('Case History');
+        const hasCaseDetails = html.includes('Case Details') || html.includes('Filing Number');
+        
+        console.log(`[eCourts] Page title: ${pageTitle}, CAPTCHA visible: ${captchaStillVisible}`);
+        console.log(`[eCourts] Has history: ${hasHistoryTable}, Has case details: ${hasCaseDetails}`);
+        console.log(`[eCourts] Body text preview: ${bodyText.substring(0, 500).replace(/\s+/g, ' ')}`);
+        
+        if (html.toLowerCase().includes('invalid captcha') || 
+            html.toLowerCase().includes('captcha error') ||
+            html.toLowerCase().includes('wrong captcha') ||
+            html.toLowerCase().includes('enter valid captcha') ||
+            (!hasCaseDetails && !hasHistoryTable && html.includes('cino'))) {
           console.log(`[eCourts] CAPTCHA failed, retrying...`);
           continue;
         }
