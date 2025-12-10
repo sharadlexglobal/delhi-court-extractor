@@ -8,6 +8,7 @@ import {
   Settings,
   Scale,
   FileSpreadsheet,
+  UserSearch,
 } from "lucide-react";
 import {
   Sidebar,
@@ -52,6 +53,11 @@ const mainItems = [
     title: "Case Reports",
     url: "/case-reports",
     icon: FileSpreadsheet,
+  },
+  {
+    title: "Direct CNR",
+    url: "/direct-cnr",
+    icon: UserSearch,
   },
 ];
 
