@@ -175,20 +175,50 @@ directCnrRouter.post('/cases/:id/extract', heavyOperationLimit, async (req: Requ
       });
     }
 
+    const sanitize = (val: string | null, maxLen: number = 1000): string | null => {
+      if (!val || val.trim() === '') return null;
+      const trimmed = val.trim();
+      return trimmed.length > maxLen ? trimmed.substring(0, maxLen) : trimmed;
+    };
+    
+    const parseDate = (val: string | null): string | null => {
+      if (!val || val.trim() === '') return null;
+      const trimmed = val.trim();
+      const ddmmyyyy = trimmed.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+      if (ddmmyyyy) {
+        const [, day, month, year] = ddmmyyyy;
+        return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      }
+      const months: Record<string, string> = {
+        january: '01', february: '02', march: '03', april: '04',
+        may: '05', june: '06', july: '07', august: '08',
+        september: '09', october: '10', november: '11', december: '12'
+      };
+      const textDate = trimmed.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+(\w+)\s+(\d{4})$/i);
+      if (textDate) {
+        const [, day, monthName, year] = textDate;
+        const monthNum = months[monthName.toLowerCase()];
+        if (monthNum) {
+          return `${year}-${monthNum}-${day.padStart(2, '0')}`;
+        }
+      }
+      return null;
+    };
+    
     await updateCaseDetails(caseId, {
-      caseType: caseDetails.caseDetails.caseType,
-      filingNumber: caseDetails.caseDetails.filingNumber,
-      filingDate: caseDetails.caseDetails.filingDate,
-      registrationNumber: caseDetails.caseDetails.registrationNumber,
-      registrationDate: caseDetails.caseDetails.registrationDate,
-      petitionerName: caseDetails.parties.petitioner.name,
-      petitionerAdvocate: caseDetails.parties.petitioner.advocate,
-      respondentName: caseDetails.parties.respondent.name,
-      respondentAdvocate: caseDetails.parties.respondent.advocate,
-      firstHearingDate: caseDetails.caseStatus.firstHearingDate,
-      nextHearingDate: caseDetails.caseStatus.nextHearingDate,
-      caseStage: caseDetails.caseStatus.caseStage,
-      courtName: caseDetails.caseStatus.courtNumberAndJudge
+      caseType: sanitize(caseDetails.caseDetails.caseType, 100),
+      filingNumber: sanitize(caseDetails.caseDetails.filingNumber, 100),
+      filingDate: parseDate(caseDetails.caseDetails.filingDate),
+      registrationNumber: sanitize(caseDetails.caseDetails.registrationNumber, 100),
+      registrationDate: parseDate(caseDetails.caseDetails.registrationDate),
+      petitionerName: sanitize(caseDetails.parties.petitioner.name),
+      petitionerAdvocate: sanitize(caseDetails.parties.petitioner.advocate),
+      respondentName: sanitize(caseDetails.parties.respondent.name),
+      respondentAdvocate: sanitize(caseDetails.parties.respondent.advocate),
+      firstHearingDate: parseDate(caseDetails.caseStatus.firstHearingDate),
+      nextHearingDate: parseDate(caseDetails.caseStatus.nextHearingDate),
+      caseStage: sanitize(caseDetails.caseStatus.caseStage, 200),
+      courtName: sanitize(caseDetails.caseStatus.courtNumberAndJudge, 300)
     });
 
     await markCaseDetailsExtracted(caseId);

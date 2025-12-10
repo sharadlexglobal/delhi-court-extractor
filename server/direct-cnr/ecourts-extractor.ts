@@ -70,7 +70,7 @@ async function solveCaptcha(captchaImageBytes: Buffer): Promise<string> {
       content: [
         {
           type: "text",
-          text: "Read this CAPTCHA image and return ONLY the 6 characters. No explanation, no spaces, just the 6 characters. Characters are lowercase letters (a-z) and digits (0-9). Be very careful with similar looking characters like 0/O, 1/l/I, 5/S, 8/B."
+          text: "Read this CAPTCHA image and return ONLY the 6 characters exactly as shown. No explanation, no spaces, just the 6 characters. Preserve the exact case (uppercase/lowercase). Be very careful with similar looking characters like 0/O, 1/l/I, 5/S, 8/B."
         },
         {
           type: "image_url",
@@ -85,21 +85,39 @@ async function solveCaptcha(captchaImageBytes: Buffer): Promise<string> {
 
   const solution = response.choices[0].message.content?.trim() || '';
 
-  if (!/^[a-z0-9]{6}$/i.test(solution)) {
+  if (!/^[a-zA-Z0-9]{6}$/.test(solution)) {
     throw new Error(`Invalid CAPTCHA solution format: ${solution}`);
   }
 
-  return solution.toLowerCase();
+  return solution;
 }
 
 async function parseECourtsPage(page: Page, cnr: string): Promise<CaseDetails> {
-  const html = await page.content();
-
-  const extractField = (patterns: RegExp[]): string | null => {
-    for (const pattern of patterns) {
-      const match = html.match(pattern);
-      if (match && match[1]) {
-        return match[1].trim();
+  const caseData = await page.evaluate(() => {
+    const data: Record<string, string> = {};
+    const tables = document.querySelectorAll('table');
+    for (const table of tables) {
+      const rows = table.querySelectorAll('tr');
+      for (const row of rows) {
+        const cells = row.querySelectorAll('td');
+        if (cells.length >= 2) {
+          const label = cells[0]?.textContent?.trim().replace(/[:\s]+$/, '') || '';
+          const value = cells[1]?.textContent?.trim() || '';
+          if (label && value && !label.includes('{') && !label.includes('"')) {
+            data[label] = value;
+          }
+        }
+      }
+    }
+    return data;
+  });
+  
+  const extractField = (fieldNames: string[]): string | null => {
+    for (const name of fieldNames) {
+      for (const [key, value] of Object.entries(caseData)) {
+        if (key.toLowerCase().includes(name.toLowerCase()) && value) {
+          return value;
+        }
       }
     }
     return null;
@@ -206,23 +224,25 @@ async function parseECourtsPage(page: Page, cnr: string): Promise<CaseDetails> {
     };
   });
 
+  console.log(`[eCourts] Extracted case data keys: ${Object.keys(caseData).slice(0, 10).join(', ')}`);
+  
   return {
     status: 'success',
     cnr,
     extractionDate: new Date().toISOString(),
     caseDetails: {
-      court: extractField([/Court[:\s]*([^\n<]+)/i]),
-      caseType: extractField([/Case Type[:\s]*([^\n<]+)/i, /Type[:\s]*([^\n<]+)/i]),
-      filingNumber: extractField([/Filing Number[:\s]*([^\n<]+)/i]),
-      filingDate: extractField([/Filing Date[:\s]*([^\n<]+)/i]),
-      registrationNumber: extractField([/Registration Number[:\s]*([^\n<]+)/i, /Reg\. Number[:\s]*([^\n<]+)/i]),
-      registrationDate: extractField([/Registration Date[:\s]*([^\n<]+)/i, /Reg\. Date[:\s]*([^\n<]+)/i]),
+      court: extractField(['Court']),
+      caseType: extractField(['Case Type']),
+      filingNumber: extractField(['Filing Number']),
+      filingDate: extractField(['Filing Date']),
+      registrationNumber: extractField(['Registration Number', 'Reg. Number']),
+      registrationDate: extractField(['Registration Date', 'Reg. Date']),
     },
     caseStatus: {
-      firstHearingDate: extractField([/First Hearing Date[:\s]*([^\n<]+)/i]),
-      nextHearingDate: extractField([/Next Hearing Date[:\s]*([^\n<]+)/i]),
-      caseStage: extractField([/Case Stage[:\s]*([^\n<]+)/i, /Stage[:\s]*([^\n<]+)/i]),
-      courtNumberAndJudge: extractField([/Court Number and Judge[:\s]*([^\n<]+)/i, /Judge[:\s]*([^\n<]+)/i]),
+      firstHearingDate: extractField(['First Hearing Date']),
+      nextHearingDate: extractField(['Next Hearing Date']),
+      caseStage: extractField(['Case Stage', 'Stage']),
+      courtNumberAndJudge: extractField(['Court Number and Judge']),
     },
     parties,
     caseHistory,
@@ -279,13 +299,16 @@ export async function extractCaseDetails(cnr: string): Promise<CaseDetails> {
         console.log(`[eCourts] Has history: ${hasHistoryTable}, Has case details: ${hasCaseDetails}`);
         console.log(`[eCourts] Body text preview: ${bodyText.substring(0, 500).replace(/\s+/g, ' ')}`);
         
-        if (html.toLowerCase().includes('invalid captcha') || 
-            html.toLowerCase().includes('captcha error') ||
-            html.toLowerCase().includes('wrong captcha') ||
-            html.toLowerCase().includes('enter valid captcha') ||
-            (!hasCaseDetails && !hasHistoryTable && html.includes('cino'))) {
-          console.log(`[eCourts] CAPTCHA failed, retrying...`);
-          continue;
+        if (hasCaseDetails || hasHistoryTable) {
+          console.log(`[eCourts] SUCCESS! Case details found.`);
+          await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+          await page.waitForTimeout(2000);
+          
+          const caseDetails = await parseECourtsPage(page, cnr);
+          console.log(`[eCourts] Successfully extracted case details for CNR: ${cnr}`);
+          console.log(`[eCourts] Found ${caseDetails.interimOrders.length} interim orders`);
+          
+          return caseDetails;
         }
 
         if (html.toLowerCase().includes('no record found')) {
@@ -303,14 +326,7 @@ export async function extractCaseDetails(cnr: string): Promise<CaseDetails> {
           };
         }
 
-        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-        await page.waitForTimeout(2000);
-
-        const caseDetails = await parseECourtsPage(page, cnr);
-        console.log(`[eCourts] Successfully extracted case details for CNR: ${cnr}`);
-        console.log(`[eCourts] Found ${caseDetails.interimOrders.length} interim orders`);
-        
-        return caseDetails;
+        console.log(`[eCourts] CAPTCHA failed or page not loaded, retrying...`);
 
       } catch (error) {
         console.error(`[eCourts] Attempt ${attempt + 1} failed:`, error);
